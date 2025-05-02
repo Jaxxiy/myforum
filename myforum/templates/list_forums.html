@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Форумы</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; }
+        .forum { border: 1px solid #ddd; padding: 15px; margin-bottom: 10px; border-radius: 5px; }
+        .forum h2 { margin-top: 0; }
+        .forum a { text-decoration: none; color: #0066cc; }
+        .new-forum { margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <h1>Список форумов</h1>
+    
+    <div class="new-forum">
+        <a href="/api/forums/new">Создать новый форум</a>
+    </div>
+
+    {{ range .Forums }}
+    <div class="forum">
+        <h2><a href="/api/forums/{{ .ID }}/messages">{{ .Title }}</a></h2>
+        <p>{{ .Description }}</p>
+        <small>Создано: {{ .CreatedAt.Format "2006-01-02 15:04" }}</small>
+    </div>
+    {{ end }}
+</body>
+</html>

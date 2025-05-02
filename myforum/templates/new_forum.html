@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Создать новый форум</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; }
+        form div { margin-bottom: 15px; }
+        input[type="text"], textarea { width: 100%; padding: 8px; }
+        textarea { height: 150px; }
+        button { padding: 10px 20px; background: #0066cc; color: white; border: none; }
+    </style>
+</head>
+<body>
+    <h1>Создать новый форум</h1>
+    
+    <form method="POST" action="/api/forums">
+        <div>
+            <label>Название:</label>
+            <input type="text" name="title" required>
+        </div>
+        <div>
+            <label>Описание:</label>
+            <textarea name="description"></textarea>
+        </div>
+        <button type="submit">Создать</button>
+    </form>
+</body>
+</html>

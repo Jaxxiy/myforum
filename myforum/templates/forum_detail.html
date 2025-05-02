@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ .Title }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; }
+        .forum { border: 1px solid #ddd; padding: 15px; margin-bottom: 20px; }
+        .messages { margin-top: 30px; }
+        .message { border-bottom: 1px solid #eee; padding: 10px 0; }
+        .back-link { display: block; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <a href="/api/forums" class="back-link">← Назад к списку форумов</a>
+    
+    <div class="forum">
+        <h1>{{ .Title }}</h1>
+        <p>{{ .Description }}</p>
+    </div>
+
+    <div class="messages">
+        <h2>Сообщения</h2>
+        <a href="/api/forums/{{ .ID }}/messages">Просмотреть все сообщения</a>
+    </div>
+</body>
+</html>

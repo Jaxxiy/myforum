@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Сообщения в {{ .Forum.Title }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; }
+        .message { border-bottom: 1px solid #eee; padding: 15px 0; }
+        .message-meta { font-size: 0.9em; color: #666; }
+        .back-link { display: block; margin-bottom: 20px; }
+        form { margin-top: 30px; }
+        textarea { width: 100%; height: 100px; }
+    </style>
+</head>
+<body>
+    <a href="/api/forums" class="back-link">← Назад к форуму</a>
+    
+    <h1>{{ .Forum.Title }}</h1>
+    <p>{{ .Forum.Description }}</p>
+
+    <h2>Сообщения</h2>
+    
+    {{ range .Messages }}
+    <div class="message">
+        <div class="message-content">{{ .Content }}</div>
+        <div class="message-meta">
+            Автор: {{ .Author }} | Дата: {{ .CreatedAt.Format "2006-01-02 15:04" }}
+        </div>
+    </div>
+    {{ end }}
+
+    <h3>Добавить сообщение</h3>
+    <form method="POST" action="/api/forums/{{ .Forum.ID }}/messages">
+        <div>
+            <label>Ваше имя:</label>
+            <input type="text" name="author" required>
+        </div>
+        <div>
+            <label>Сообщение:</label>
+            <textarea name="content" required></textarea>
+        </div>
+        <button type="submit">Отправить</button>
+    </form>
+</body>
+</html>
