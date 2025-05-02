@@ -11,9 +11,9 @@ import (
 func RegisterForumHandlers(r *mux.Router) {
 	r.HandleFunc("/forums", CreateForum).Methods("POST")
 	r.HandleFunc("/forums/{id}", GetForum).Methods("GET")
-	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Сервер работает!"))
-	})
+	//r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	//	w.Write([]byte("Сервер работает!"))
+	//})
 }
 
 func CreateForum(w http.ResponseWriter, r *http.Request) {

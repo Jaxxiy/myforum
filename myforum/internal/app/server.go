@@ -20,13 +20,19 @@ import (
 type Server struct {
 	httpServer *http.Server
 	grpcServer *grpc.Server
-	db         *repository.Postgres // добавляем подключение к базе
+	db         *repository.Postgres // подключение к базе
 	wg         sync.WaitGroup
 }
 
 func NewServer() *Server {
 	r := mux.NewRouter()
+
+	// Регистрация API-хендлеров
 	handlers.RegisterForumHandlers(r)
+
+	// Обслуживание статических файлов (например, index.html)
+	// Предположим, что папка frontend находится в корне проекта
+	r.PathPrefix("/").Handler(http.StripPrefix("/", http.FileServer(http.Dir("C:/Users/Soulless/Desktop/myforum/cmd/frontend/"))))
 
 	httpSrv := &http.Server{
 		Addr:    ":8080",
@@ -35,10 +41,10 @@ func NewServer() *Server {
 
 	grpcSrv := grpc.NewServer()
 
-	// Строка подключения к базе
+	// Строка подключения к базе данных
 	dsn := "postgres://postgres:Stas2005101010!@localhost:5432/forum?sslmode=disable"
 
-	// Создаем подключение к базе данных
+	// Создаем подключение к базе
 	db, err := repository.NewPostgres(dsn)
 	if err != nil {
 		log.Fatalf("Не удалось подключиться к базе данных: %v", err)
@@ -50,7 +56,7 @@ func NewServer() *Server {
 	return &Server{
 		httpServer: httpSrv,
 		grpcServer: grpcSrv,
-		db:         db, // сохраняем подключение
+		db:         db,
 	}
 }
 
