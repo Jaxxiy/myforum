@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<title>Тестовая страница</title>
+</head>
+<body>
+<h1>Тестовая страница для проверки сервера</h1>
+
+<h2>HTTP API</h2>
+<p>Если у вас есть API, откройте его по адресу: <a href="http://localhost:8080/">http://localhost:8080/</a></p>
+
+<h2>WebSocket чат</h2>
+<button id="connectBtn">Подключиться к чату</button>
+<br/><br/>
+<input type="text" id="messageInput" placeholder="Сообщение" />
+<button onclick="sendMessage()">Отправить</button>
+<div id="messages" style="border:1px solid #000; height:200px; overflow:auto; margin-top:10px; padding:5px;"></div>
+
+<script>
+let ws;
+
+document.getElementById('connectBtn').onclick = () => {
+    ws = new WebSocket("ws://localhost:8081/ws");
+    ws.onopen = () => {
+        addMessage("Подключено к WebSocket");
+    };
+    ws.onmessage = (event) => {
+        addMessage("Получено: " + event.data);
+    };
+    ws.onclose = () => {
+        addMessage("Соединение закрыто");
+    };
+    ws.onerror = () => {
+        addMessage("Ошибка соединения");
+    };
+};
+
+function sendMessage() {
+    const input = document.getElementById('messageInput');
+    if(ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(input.value);
+        addMessage("Отправлено: " + input.value);
+        input.value = "";
+    } else {
+        alert("Не подключено к WebSocket");
+    }
+}
+
+function addMessage(text) {
+    const div = document.getElementById('messages');
+    div.innerHTML += text + "<br/>";
+    div.scrollTop = div.scrollHeight;
+}
+</script>
+</body>
+</html>
