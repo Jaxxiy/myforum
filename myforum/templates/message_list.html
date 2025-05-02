@@ -1,44 +1,202 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Сообщения в {{ .Forum.Title }}</title>
+    <title>Чат форума - {{ .Forum.Title }}</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; }
-        .message { border-bottom: 1px solid #eee; padding: 15px 0; }
-        .message-meta { font-size: 0.9em; color: #666; }
-        .back-link { display: block; margin-bottom: 20px; }
-        form { margin-top: 30px; }
-        textarea { width: 100%; height: 100px; }
+        .message-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .messages {
+            height: 500px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-bottom: 20px;
+            background: #f9f9f9;
+        }
+        .message {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        .message-author {
+            font-weight: bold;
+            color: #333;
+        }
+        .message-time {
+            font-size: 0.8em;
+            color: #666;
+        }
+        .message-content {
+            margin: 5px 0;
+        }
+        #message-form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        #message-form input,
+        #message-form textarea {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        #message-form textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+        button {
+            padding: 8px 15px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .status.success {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        .status.error {
+            background: #ffebee;
+            color: #c62828;
+        }
     </style>
 </head>
 <body>
-    <a href="/api/forums" class="back-link">← Назад к форуму</a>
-    
-    <h1>{{ .Forum.Title }}</h1>
-    <p>{{ .Forum.Description }}</p>
-
-    <h2>Сообщения</h2>
-    
-    {{ range .Messages }}
-    <div class="message">
-        <div class="message-content">{{ .Content }}</div>
-        <div class="message-meta">
-            Автор: {{ .Author }} | Дата: {{ .CreatedAt.Format "2006-01-02 15:04" }}
+    <div class="message-container">
+        <h1>{{ .Forum.Title }}</h1>
+        <p>{{ .Forum.Description }}</p>
+        
+        <div id="messages" class="messages">
+            {{ range .Messages }}
+            <div class="message">
+                <div class="message-author">{{ .Author }}</div>
+                <div class="message-content">{{ .Content }}</div>
+                <div class="message-time">{{ .CreatedAt.Format "2006-01-02 15:04:05" }}</div>
+            </div>
+            {{ end }}
         </div>
+        
+        <form id="message-form">
+            <input type="text" id="author" placeholder="Ваше имя" required>
+            <textarea id="content" placeholder="Ваше сообщение" required></textarea>
+            <button type="submit">Отправить</button>
+        </form>
+        
+        <div id="status" class="status"></div>
     </div>
-    {{ end }}
 
-    <h3>Добавить сообщение</h3>
-    <form method="POST" action="/api/forums/{{ .Forum.ID }}/messages">
-        <div>
-            <label>Ваше имя:</label>
-            <input type="text" name="author" required>
-        </div>
-        <div>
-            <label>Сообщение:</label>
-            <textarea name="content" required></textarea>
-        </div>
-        <button type="submit">Отправить</button>
-    </form>
+    <div id="forum-data" data-forum-id="{{ .Forum.ID }}" style="display:none;"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const forumId = document.getElementById('forum-data').dataset.forumId;
+            const messagesContainer = document.getElementById('messages');
+            const messageForm = document.getElementById('message-form');
+            const statusElement = document.getElementById('status');
+            let ws;
+
+            // WebSocket соединение
+            function connectWebSocket() {
+                const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+                ws = new WebSocket(`${protocol}${window.location.host}/ws/${forumId}`);
+
+                ws.onopen = () => updateStatus('Connected to chat', 'success');
+                ws.onclose = () => {
+                    updateStatus('Connection lost. Reconnecting...', 'error');
+                    setTimeout(connectWebSocket, 5000);
+                };
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    updateStatus('Connection error', 'error');
+                };
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'message_created') {
+                            addMessage(data.payload);
+                        }
+                    } catch (e) {
+                        console.error('Error processing message:', e);
+                    }
+                };
+            }
+
+            // Добавление сообщения в чат
+            function addMessage(message) {
+                const messageElement = document.createElement('div');
+                messageElement.className = 'message';
+                messageElement.innerHTML = `
+                    <div class="message-author">${escapeHtml(message.Author)}</div>
+                    <div class="message-content">${escapeHtml(message.Content)}</div>
+                    <div class="message-time">${new Date(message.CreatedAt).toLocaleString()}</div>
+                `;
+                messagesContainer.appendChild(messageElement);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+
+            // Отправка сообщения
+            messageForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const author = document.getElementById('author').value.trim();
+                const content = document.getElementById('content').value.trim();
+                
+                if (!author || !content) {
+                    updateStatus('Please fill all fields', 'error');
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`/api/forums/${forumId}/messages`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({ author, content })
+                    });
+
+                    const data = await response.json();
+                    
+                    if (!response.ok) {
+                        throw new Error(data.error || 'Server error');
+                    }
+
+                    document.getElementById('content').value = '';
+                    updateStatus('Message sent', 'success');
+                } catch (error) {
+                    console.error('Error:', error);
+                    updateStatus(error.message, 'error');
+                }
+            });
+
+            // Вспомогательные функции
+            function updateStatus(message, type) {
+                statusElement.textContent = message;
+                statusElement.className = `status ${type}`;
+            }
+
+            function escapeHtml(text) {
+                return text
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#039;');
+            }
+
+            // Инициализация
+            connectWebSocket();
+        });
+    </script>
 </body>
 </html>

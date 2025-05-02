@@ -4,6 +4,7 @@ package repository
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"github.com/jaxxiy/myforum/internal/business"
 )
@@ -94,14 +95,30 @@ func (r *ForumsRepo) Delete(id int) error {
 
 //Сообщения
 
-func (r *ForumsRepo) CreateMessage(message business.Message) (int, error) {
+func (r *ForumsRepo) CreateMessage(msg business.Message) (int, error) {
+	// 1. Проверяем существование форума (исправленный запрос)
+	var exists bool
+	fmt.Println(msg.ForumID)
+	err := r.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM forums WHERE id = $1)", msg.ForumID).Scan(&exists)
+	if err != nil {
+		return 0, fmt.Errorf("forum check failed: %v", err)
+	}
+	if !exists {
+		return 0, fmt.Errorf("forum with ID %d not found", msg.ForumID)
+	}
+
+	// 2. Вставляем сообщение (исправленный запрос)
 	var id int
-	err := r.DB.QueryRow(
-		`INSERT INTO messages (forum_id, author, content) 
-         VALUES ($1, $2, $3) RETURNING id`,
-		message.ForumID, message.Author, message.Content,
+	err = r.DB.QueryRow(
+		"INSERT INTO messages (forum_id, author, content, created_at) VALUES ($1, $2, $3, $4) RETURNING id",
+		msg.ForumID, msg.Author, msg.Content, msg.CreatedAt,
 	).Scan(&id)
-	return id, err
+
+	if err != nil {
+		return 0, fmt.Errorf("insert message failed: %v", err)
+	}
+
+	return id, nil
 }
 
 func (r *ForumsRepo) GetMessages(forumID int) ([]business.Message, error) {
