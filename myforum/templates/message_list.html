@@ -177,14 +177,19 @@
     
             // Добавление сообщения в чат
             function addMessageToDOM(message) {
+    const messagesContainer = document.getElementById('messages');
     const messageElement = document.createElement('div');
     messageElement.className = 'message';
     messageElement.dataset.messageId = message.id;
+    
+    // Проверяем, является ли текущий пользователь автором
+    const isAuthor = message.author === currentUser;
+    
     messageElement.innerHTML = `
         <div class="message-author">${escapeHtml(message.author)}</div>
         <div class="message-content">${escapeHtml(message.content)}</div>
         <div class="message-time">${formatDateTime(message.createdAt)}</div>
-        <div class="message-actions" ${message.author !== currentUser ? 'style="display:none"' : ''}>
+        <div class="message-actions" ${!isAuthor ? 'style="display:flex"' : ''}>
             <button class="edit-btn">Изменить</button>
             <button class="delete-btn">Удалить</button>
         </div>
@@ -194,6 +199,7 @@
             <button class="cancel-edit">Отмена</button>
         </div>
     `;
+    
     messagesContainer.appendChild(messageElement);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
