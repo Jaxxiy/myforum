@@ -183,8 +183,10 @@ func PostMessage(repo *repository.ForumsRepo) http.HandlerFunc {
 			ForumID:   forumID,
 			Author:    req.Author,
 			Content:   req.Content,
-			CreatedAt: time.Now().UTC(),
+			CreatedAt: time.Now(),
 		}
+
+		fmt.Println(msg.CreatedAt)
 
 		// Сохраняем в БД
 		id, err := repo.CreateMessage(msg)
@@ -225,14 +227,6 @@ func sendWSMessage(forumID int, message WSMessage) {
 			}
 		}
 	}
-}
-
-// sendJSONError - отправка ошибки в JSON формате
-func sendJSONError(w http.ResponseWriter, status int, message string) {
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{
-		"error": message,
-	})
 }
 
 func ListForums(repo *repository.ForumsRepo) http.HandlerFunc {
