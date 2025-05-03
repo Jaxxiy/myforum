@@ -3,6 +3,14 @@
 <head>
     <title>Чат форума - {{ .Forum.Title }}</title>
     <style>
+        button {
+            padding: 8px 15px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
         .message-container {
             max-width: 800px;
             margin: 0 auto;
@@ -37,15 +45,8 @@
             display: flex;
             gap: 5px;
         }
-        .message-actions button {
-            padding: 3px 8px;
-            font-size: 0.8em;
-            background: #f0f0f0;
-            color: #333;
-            border: 1px solid #ddd;
-        }
         .message-actions button:hover {
-            background: #e0e0e0;
+            background: #009511;
         }
         .edit-form {
             display: none;
@@ -70,14 +71,7 @@
             min-height: 80px;
             resize: vertical;
         }
-        button {
-            padding: 8px 15px;
-            background: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
+        
         .status {
             margin-top: 10px;
             padding: 10px;
