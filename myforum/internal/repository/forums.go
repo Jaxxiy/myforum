@@ -21,12 +21,17 @@ func NewForumsRepo(db *sql.DB) *ForumsRepo {
 
 func (r *ForumsRepo) Create(f business.Forum) (int, error) {
 	var id int
-	err := r.DB.QueryRow(`INSERT INTO forums (name, description) VALUES ($1, $2) RETURNING id`, f.Title, f.Description).Scan(&id)
+	// Явно указываем, что created_at должен использовать значение по умолчанию
+	err := r.DB.QueryRow(`
+        INSERT INTO forums (name, description, created_at)
+        VALUES ($1, $2, DEFAULT)
+        RETURNING id`,
+		f.Title, f.Description).Scan(&id)
 	return id, err
 }
 
 func (r *ForumsRepo) GetAll() ([]business.Forum, error) {
-	rows, err := r.DB.Query(`SELECT id, name, description FROM forums`)
+	rows, err := r.DB.Query(`SELECT id, name, description, created_at FROM forums`)
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +40,7 @@ func (r *ForumsRepo) GetAll() ([]business.Forum, error) {
 	var forums []business.Forum
 	for rows.Next() {
 		var f business.Forum
-		if err := rows.Scan(&f.ID, &f.Title, &f.Description); err != nil {
+		if err := rows.Scan(&f.ID, &f.Title, &f.Description, &f.CreatedAt); err != nil {
 			return nil, err
 		}
 		forums = append(forums, f)

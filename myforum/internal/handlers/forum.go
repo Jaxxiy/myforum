@@ -260,6 +260,7 @@ func CreateForum(repo *repository.ForumsRepo) http.HandlerFunc {
 		forum := business.Forum{
 			Title:       title,
 			Description: description,
+			CreatedAt:   time.Now(),
 		}
 
 		id, err := repo.Create(forum)
@@ -277,8 +278,11 @@ func CreateForum(repo *repository.ForumsRepo) http.HandlerFunc {
 			},
 		})
 
+		http.Redirect(w, r, "/api/forums", http.StatusSeeOther)
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(forum)
+
 	}
 }
 
