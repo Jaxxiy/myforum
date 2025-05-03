@@ -32,6 +32,29 @@
         .message-content {
             margin: 5px 0;
         }
+        .message-actions {
+            margin-top: 5px;
+            display: flex;
+            gap: 5px;
+        }
+        .message-actions button {
+            padding: 3px 8px;
+            font-size: 0.8em;
+            background: #f0f0f0;
+            color: #333;
+            border: 1px solid #ddd;
+        }
+        .message-actions button:hover {
+            background: #e0e0e0;
+        }
+        .edit-form {
+            display: none;
+            margin-top: 10px;
+        }
+        .edit-form textarea {
+            width: 100%;
+            min-height: 60px;
+        }
         #message-form {
             display: flex;
             flex-direction: column;
@@ -77,10 +100,19 @@
         
         <div id="messages" class="messages">
             {{ range .Messages }}
-            <div class="message">
+            <div class="message" data-message-id="{{ .ID }}">
                 <div class="message-author">{{ .Author }}</div>
                 <div class="message-content">{{ .Content }}</div>
                 <div class="message-time">{{ .CreatedAt.Format "2006-01-02 15:04:05" }}</div>
+                <div class="message-actions">
+                    <button class="edit-btn">Изменить</button>
+                    <button class="delete-btn">Удалить</button>
+                </div>
+                <div class="edit-form">
+                    <textarea class="edit-content">{{ .Content }}</textarea>
+                    <button class="save-edit">Сохранить</button>
+                    <button class="cancel-edit">Отмена</button>
+                </div>
             </div>
             {{ end }}
         </div>
@@ -103,12 +135,13 @@
             const messagesContainer = document.getElementById('messages');
             const messageForm = document.getElementById('message-form');
             const statusElement = document.getElementById('status');
-
+            let currentUser = 'anonymous'; // Здесь можно получить текущего пользователя
+    
             // WebSocket соединение
             function connectWebSocket() {
                 const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
                 ws = new WebSocket(`${protocol}${window.location.host}/ws/${forumId}`);
-
+    
                 ws.onopen = () => updateStatus('Connected to chat', 'success');
                 ws.onclose = () => {
                     updateStatus('Connection lost. Reconnecting...', 'error');
@@ -119,60 +152,81 @@
                     updateStatus('Connection error', 'error');
                 };
                 ws.onmessage = function(event) {
-                try {
-                    const data = JSON.parse(event.data);
-                    
-                    // Проверяем тип сообщения и его структуру
-                    if (data.type === 'message_created' && data.payload) {
-                        console.log("good");
-                        const message = {
-                            author: data.payload.author || 'Аноним',
-                            content: data.payload.content || '',
-                            createdAt: data.payload.created_at || new Date().toISOString()
-                        };
-                        console.log(message);
+                    try {
+                        const data = JSON.parse(event.data);
                         
-                        addMessageToDOM(message);
-                    } else {
-                        console.warn('Unknown message format:', data);
+                        if (data.type === 'message_created' && data.payload) {
+                            const message = {
+                                id: data.payload.id,
+                                author: data.payload.author || 'Аноним',
+                                content: data.payload.content || '',
+                                createdAt: data.payload.created_at || new Date().toISOString()
+                            };
+                            addMessageToDOM(message);
+                        } else if (data.type === 'message_updated' && data.payload) {
+                            updateMessageInDOM(data.payload);
+                        } else if (data.type === 'message_deleted') {
+                            removeMessageFromDOM(data.messageId);
+                        }
+                    } catch (e) {
+                        console.error('Message processing error:', e, 'Raw data:', event.data);
                     }
-                } catch (e) {
-                    console.error('Message processing error:', e, 'Raw data:', event.data);
-                }
-            };
+                };
             }
-
+    
             // Добавление сообщения в чат
             function addMessageToDOM(message) {
-            const messagesContainer = document.getElementById('messages');
-            const messageElement = document.createElement('div');
-            messageElement.className = 'message';
-            messageElement.innerHTML = `
-                <div class="message-author">${escapeHtml(message.author)}</div>
-                <div class="message-content">${escapeHtml(message.content)}</div>
-                <div class="message-time">${formatDateTime(message.createdAt)}</div>
-            `;
-            messagesContainer.appendChild(messageElement);
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                const messageElement = document.createElement('div');
+                messageElement.className = 'message';
+                messageElement.dataset.messageId = message.id;
+                messageElement.innerHTML = `
+                    <div class="message-author">${escapeHtml(message.author)}</div>
+                    <div class="message-content">${escapeHtml(message.content)}</div>
+                    <div class="message-time">${formatDateTime(message.createdAt)}</div>
+                    <div class="message-actions">
+                        <button class="edit-btn" ${message.author !== currentUser ? 'style="display:none"' : ''}>Изменить</button>
+                        <button class="delete-btn" ${message.author !== currentUser ? 'style="display:none"' : ''}>Удалить</button>
+                    </div>
+                    <div class="edit-form" style="display:none">
+                        <textarea class="edit-content">${escapeHtml(message.content)}</textarea>
+                        <button class="save-edit">Сохранить</button>
+                        <button class="cancel-edit">Отмена</button>
+                    </div>
+                `;
+                messagesContainer.appendChild(messageElement);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
-
+    
+            // Обновление сообщения в DOM
+            function updateMessageInDOM(message) {
+                const messageElement = document.querySelector(`.message[data-message-id="${message.id}"]`);
+                if (messageElement) {
+                    messageElement.querySelector('.message-content').textContent = message.content;
+                    const editForm = messageElement.querySelector('.edit-form');
+                    if (editForm) editForm.style.display = 'none';
+                }
+            }
+    
+            // Удаление сообщения из DOM
+            function removeMessageFromDOM(messageId) {
+                const messageElement = document.querySelector(`.message[data-message-id="${messageId}"]`);
+                if (messageElement) {
+                    messageElement.remove();
+                }
+            }
+    
+            // Форматирование даты
             function formatDateTime(isoString) {
-    const date = new Date(isoString);
+                const date = new Date(isoString);
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                const seconds = String(date.getSeconds()).padStart(2, '0');
+                return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+            }
     
-    // Получаем компоненты даты
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    
-    // Получаем компоненты времени
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    const seconds = String(date.getSeconds()).padStart(2, '0');
-    
-    // Собираем в нужный формат
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-}
-
             // Отправка сообщения
             messageForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
@@ -184,7 +238,7 @@
                     updateStatus('Please fill all fields', 'error');
                     return;
                 }
-
+    
                 try {
                     const response = await fetch(`/api/forums/${forumId}/messages`, {
                         method: 'POST',
@@ -194,13 +248,13 @@
                         },
                         body: JSON.stringify({ author, content })
                     });
-
+    
                     const data = await response.json();
                     
                     if (!response.ok) {
                         throw new Error(data.error || 'Server error');
                     }
-
+    
                     document.getElementById('content').value = '';
                     updateStatus('Message sent', 'success');
                 } catch (error) {
@@ -208,13 +262,95 @@
                     updateStatus(error.message, 'error');
                 }
             });
-
+    
+            // Обработчики для кнопок удаления и редактирования
+            messagesContainer.addEventListener('click', function(e) {
+                const messageElement = e.target.closest('.message');
+                if (!messageElement) return;
+                
+                const messageId = messageElement.dataset.messageId;
+                
+                // Удаление сообщения
+                if (e.target.classList.contains('delete-btn')) {
+                    if (confirm('Вы уверены, что хотите удалить это сообщение?')) {
+                        deleteMessage(messageId);
+                    }
+                }
+                
+                // Начало редактирования
+                if (e.target.classList.contains('edit-btn')) {
+                    messageElement.querySelector('.edit-form').style.display = 'block';
+                    messageElement.querySelector('.message-actions').style.display = 'none';
+                }
+                
+                // Сохранение изменений
+                if (e.target.classList.contains('save-edit')) {
+                    const newContent = messageElement.querySelector('.edit-content').value.trim();
+                    if (newContent) {
+                        updateMessage(messageId, newContent);
+                    }
+                }
+                
+                // Отмена редактирования
+                if (e.target.classList.contains('cancel-edit')) {
+                    messageElement.querySelector('.edit-form').style.display = 'none';
+                    messageElement.querySelector('.message-actions').style.display = 'flex';
+                }
+            });
+    
+            // Удаление сообщения
+            async function deleteMessage(messageId) {
+                try {
+                    const response = await fetch(`/api/forums/${forumId}/messages/${messageId}`, {
+                        method: 'DELETE'
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to delete message');
+                    }
+                    
+                    removeMessageFromDOM(messageId);
+                    updateStatus('Message deleted', 'success');
+                } catch (error) {
+                    console.error('Delete error:', error);
+                    updateStatus('Error deleting message', 'error');
+                }
+            }
+    
+            // Обновление сообщения
+            async function updateMessage(messageId, newContent) {
+                try {
+                    const response = await fetch(`/api/forums/${forumId}/messages/${messageId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ content: newContent })
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to update message');
+                    }
+                    
+                    const data = await response.json();
+                    updateMessageInDOM(data);
+                    updateStatus('Message updated', 'success');
+                } catch (error) {
+                    console.error('Update error:', error);
+                    updateStatus('Error updating message', 'error');
+                }
+            }
+    
             // Вспомогательные функции
             function updateStatus(message, type) {
                 statusElement.textContent = message;
                 statusElement.className = `status ${type}`;
+                setTimeout(() => {
+                    statusElement.textContent = '';
+                    statusElement.className = 'status';
+                }, 5000);
             }
-
+    
             function escapeHtml(text) {
                 return text
                     .replace(/&/g, '&amp;')
@@ -223,7 +359,7 @@
                     .replace(/"/g, '&quot;')
                     .replace(/'/g, '&#039;');
             }
-
+    
             // Инициализация
             connectWebSocket();
         });

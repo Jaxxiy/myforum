@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
@@ -52,6 +53,8 @@ func RegisterForumHandlers(r *mux.Router, repo *repository.ForumsRepo) {
 	api.HandleFunc("/forums/{id:[0-9]+}/messages", GetMessages(repo)).Methods("GET")
 	api.HandleFunc("/forums/{id:[0-9]+}/messages", PostMessage(repo)).Methods("POST")
 	api.HandleFunc("/forums/{forum_id:[0-9]+}/messages/{message_id:[0-9]+}", DeleteMessage(repo)).Methods("DELETE")
+	api.HandleFunc("/forums/{id:[0-9]+}/messages/{message_id:[0-9]+}", UpdateMessage(repo)).Methods("PUT")
+
 	// ... другие обработчики
 }
 
@@ -390,12 +393,45 @@ func GetMessages(repo *repository.ForumsRepo) http.HandlerFunc {
 	}
 }
 
+func UpdateMessage(repo *repository.ForumsRepo) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Извлекаем ID сообщения из URL
+		vars := mux.Vars(r)
+		messageID, err := strconv.Atoi(vars["message_id"])
+		fmt.Println(messageID)
+		if err != nil {
+			http.Error(w, "Invalid message ID", http.StatusBadRequest)
+			return
+		}
+
+		// Парсим тело запроса
+		var request struct {
+			Content string `json:"content"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		// Обновляем сообщение в репозитории
+		updatedMessage, err := repo.PutMessage(messageID, request.Content)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Возвращаем обновленное сообщение
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(updatedMessage)
+	}
+}
+
 // Отправка сообщения
 
 func DeleteMessage(repo *repository.ForumsRepo) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
-		messageID, err := strconv.Atoi(vars["id"])
+		messageID, err := strconv.Atoi(vars["message_id"])
 		if err != nil {
 			http.Error(w, "Invalid message ID", http.StatusBadRequest)
 			return

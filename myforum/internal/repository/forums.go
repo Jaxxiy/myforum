@@ -153,3 +153,29 @@ func (r *ForumsRepo) DeleteMessage(id int) error {
 	_, err := r.DB.Exec("DELETE FROM messages WHERE id = $1", id)
 	return err
 }
+
+func (r *ForumsRepo) PutMessage(messageID int, updatedContent string) (*business.Message, error) {
+	var updatedMessage business.Message
+
+	// Выполняем SQL-запрос для обновления сообщения
+	err := r.DB.QueryRow(`
+        UPDATE messages 
+        SET content = $1
+        WHERE id = $2
+        RETURNING id, forum_id, author, content, created_at`,
+		updatedContent,
+		messageID,
+	).Scan(
+		&updatedMessage.ID,
+		&updatedMessage.ForumID,
+		&updatedMessage.Author,
+		&updatedMessage.Content,
+		&updatedMessage.CreatedAt,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to update message: %w", err)
+	}
+
+	return &updatedMessage, nil
+}
