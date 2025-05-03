@@ -22,16 +22,191 @@ var (
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
 		CheckOrigin: func(r *http.Request) bool {
-			return true
+			return true // Для разработки
 		},
 	}
-	clients   = make(map[int]map[*websocket.Conn]bool)
+	clients   = make(map[int]map[*websocket.Conn]bool) // forumID -> connections
 	clientsMu sync.RWMutex
 )
 
 type WSMessage struct {
 	Type    string      `json:"type"`
 	Payload interface{} `json:"payload"`
+}
+
+func RegisterForumHandlers(r *mux.Router, repo *repository.ForumsRepo) {
+	r.HandleFunc("/ws/{forum_id:[0-9]+}", func(w http.ResponseWriter, r *http.Request) {
+		serveWebSocket(w, r)
+	})
+
+	api := r.PathPrefix("/api").Subrouter()
+
+	api.HandleFunc("/forums", ListForums(repo)).Methods("GET")
+	api.HandleFunc("/forums/new", NewForumForm()).Methods("GET")
+	api.HandleFunc("/forums", CreateForum(repo)).Methods("POST")
+	api.HandleFunc("/forums/{id:[0-9]+}", GetForum(repo)).Methods("GET")
+	api.HandleFunc("/forums/{id:[0-9]+}", UpdateForum(repo)).Methods("PUT")
+	api.HandleFunc("/forums/{id:[0-9]+}", DeleteForum(repo)).Methods("DELETE")
+
+	// Обработчики сообщений
+	api.HandleFunc("/forums/{id:[0-9]+}/messages", GetMessages(repo)).Methods("GET")
+	api.HandleFunc("/forums/{id:[0-9]+}/messages", PostMessage(repo)).Methods("POST")
+	api.HandleFunc("/forums/{forum_id:[0-9]+}/messages/{message_id:[0-9]+}", DeleteMessage(repo)).Methods("DELETE")
+	// ... другие обработчики
+}
+
+// Улучшенный обработчик WebSocket
+func serveWebSocket(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	forumID, err := strconv.Atoi(vars["forum_id"])
+	if err != nil {
+		http.Error(w, "Invalid forum ID", http.StatusBadRequest)
+		return
+	}
+
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("WebSocket upgrade error: %v", err)
+		return
+	}
+	defer func() {
+		unregisterClient(forumID, conn)
+		conn.Close()
+	}()
+
+	registerClient(forumID, conn)
+
+	// Настройка keep-alive
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+
+	// Чтение сообщений (для поддержания соединения)
+	for {
+		_, _, err := conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
+				log.Printf("WebSocket error: %v", err)
+			}
+			break
+		}
+	}
+}
+
+// Отправка сообщения всем клиентам форума
+func broadcastToForum(forumID int, message WSMessage) {
+	clientsMu.RLock()
+	defer clientsMu.RUnlock()
+
+	if conns, ok := clients[forumID]; ok {
+		for conn := range conns {
+			if err := conn.WriteJSON(message); err != nil {
+				log.Printf("WS send error: %v", err)
+				go handleFailedConnection(forumID, conn)
+			}
+		}
+	}
+}
+
+func handleFailedConnection(forumID int, conn *websocket.Conn) {
+	clientsMu.Lock()
+	defer clientsMu.Unlock()
+
+	if conns, ok := clients[forumID]; ok {
+		conn.Close()
+		delete(conns, conn)
+		log.Printf("Connection removed for forum %d", forumID)
+	}
+}
+
+func registerClient(forumID int, conn *websocket.Conn) {
+	clientsMu.Lock()
+	defer clientsMu.Unlock()
+
+	if clients[forumID] == nil {
+		clients[forumID] = make(map[*websocket.Conn]bool)
+	}
+	clients[forumID][conn] = true
+	log.Printf("New client for forum %d. Total: %d", forumID, len(clients[forumID]))
+}
+
+func unregisterClient(forumID int, conn *websocket.Conn) {
+	clientsMu.Lock()
+	defer clientsMu.Unlock()
+
+	if clients[forumID] != nil {
+		delete(clients[forumID], conn)
+	}
+}
+
+// Улучшенный обработчик сообщений
+func PostMessage(repo *repository.ForumsRepo) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		// Получаем forumID из URL
+		vars := mux.Vars(r)
+		forumID, err := strconv.Atoi(vars["id"])
+		if err != nil {
+			sendError(w, http.StatusBadRequest, "Invalid forum ID")
+			return
+		}
+
+		// Проверяем Content-Type
+		if !strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+			sendError(w, http.StatusBadRequest, "Content-Type must be application/json")
+			return
+		}
+
+		// Декодируем JSON
+		var req struct {
+			Author  string `json:"author"`
+			Content string `json:"content"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			sendError(w, http.StatusBadRequest, "Invalid JSON format")
+			return
+		}
+
+		// Валидация
+		if strings.TrimSpace(req.Author) == "" || strings.TrimSpace(req.Content) == "" {
+			sendError(w, http.StatusBadRequest, "Author and content are required")
+			return
+		}
+
+		// Создаем сообщение
+		msg := business.Message{
+			ForumID:   forumID,
+			Author:    req.Author,
+			Content:   req.Content,
+			CreatedAt: time.Now().UTC(),
+		}
+
+		// Сохраняем в БД
+		id, err := repo.CreateMessage(msg)
+		if err != nil {
+			log.Printf("DB error: %v", err)
+			sendError(w, http.StatusInternalServerError, "Failed to save message")
+			return
+		}
+		msg.ID = id
+
+		// Отправляем через WebSocket
+		go broadcastToForum(forumID, WSMessage{
+			Type:    "message_created",
+			Payload: msg,
+		})
+
+		// Успешный ответ
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(msg)
+	}
+}
+
+func sendError(w http.ResponseWriter, status int, message string) {
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
 
 // sendWSMessage отправляет сообщение всем клиентам в указанном форуме
@@ -49,186 +224,12 @@ func sendWSMessage(forumID int, message WSMessage) {
 	}
 }
 
-// handleFailedConnection обрабатывает неудачные соединения
-func handleFailedConnection(forumID int, conn *websocket.Conn) {
-	clientsMu.Lock()
-	defer clientsMu.Unlock()
-
-	if conns, ok := clients[forumID]; ok {
-		conn.Close()
-		delete(conns, conn)
-		log.Printf("Connection removed for forum %d", forumID)
-	}
-}
-
-func RegisterForumHandlers(r *mux.Router, repo *repository.ForumsRepo) {
-	r.HandleFunc("/ws/{forum_id:[0-9]+}", func(w http.ResponseWriter, r *http.Request) {
-		serveWebSocket(repo, w, r)
-	})
-
-	api := r.PathPrefix("/api").Subrouter()
-
-	// CRUD для форумов
-	api.HandleFunc("/forums", ListForums(repo)).Methods("GET")
-	api.HandleFunc("/forums/new", NewForumForm()).Methods("GET")
-	api.HandleFunc("/forums", CreateForum(repo)).Methods("POST")
-	api.HandleFunc("/forums/{id:[0-9]+}", GetForum(repo)).Methods("GET")
-	api.HandleFunc("/forums/{id:[0-9]+}", UpdateForum(repo)).Methods("PUT")
-	api.HandleFunc("/forums/{id:[0-9]+}", DeleteForum(repo)).Methods("DELETE")
-
-	// Обработчики сообщений
-	api.HandleFunc("/forums/{id:[0-9]+}/messages", GetMessages(repo)).Methods("GET")
-	api.HandleFunc("/forums/{id:[0-9]+}/messages", PostMessage(repo)).Methods("POST")
-	api.HandleFunc("/forums/{forum_id:[0-9]+}/messages/{message_id:[0-9]+}", DeleteMessage(repo)).Methods("DELETE")
-}
-
-// PostMessage - создание нового сообщения
-func PostMessage(repo *repository.ForumsRepo) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-
-		// Получаем forumID из URL
-		vars := mux.Vars(r)
-		forumID, err := strconv.Atoi(vars["id"])
-		if err != nil {
-			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid forum ID"})
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		// Проверяем Content-Type
-		if !strings.Contains(r.Header.Get("Content-Type"), "application/json") {
-			json.NewEncoder(w).Encode(map[string]string{"error": "Content-Type must be application/json"})
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		// Декодируем JSON
-		var req struct {
-			Author  string `json:"author"`
-			Content string `json:"content"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON format"})
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		// Валидация
-		req.Author = strings.TrimSpace(req.Author)
-		req.Content = strings.TrimSpace(req.Content)
-		if req.Author == "" || req.Content == "" {
-			json.NewEncoder(w).Encode(map[string]string{"error": "Author and content are required"})
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		// Создаем сообщение
-		msg := business.Message{
-			ForumID:   forumID,
-			Author:    req.Author,
-			Content:   req.Content,
-			CreatedAt: time.Now().UTC(),
-		}
-
-		// Сохраняем в БД
-		id, err := repo.CreateMessage(msg)
-		if err != nil {
-			log.Printf("Database error: %v", err)
-
-			errorMsg := "Failed to save message"
-			if strings.Contains(err.Error(), "not found") {
-				errorMsg = "Forum not found"
-				w.WriteHeader(http.StatusNotFound)
-			} else {
-				w.WriteHeader(http.StatusInternalServerError)
-			}
-
-			json.NewEncoder(w).Encode(map[string]string{"error": errorMsg})
-			return
-		}
-		msg.ID = id
-
-		// Отправляем через WebSocket
-		go sendWSMessage(forumID, WSMessage{
-			Type:    "message_created",
-			Payload: msg,
-		})
-
-		// Успешный ответ
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(msg)
-	}
-}
-
 // sendJSONError - отправка ошибки в JSON формате
 func sendJSONError(w http.ResponseWriter, status int, message string) {
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]string{
 		"error": message,
 	})
-}
-
-// serveWebSocket - обработчик WebSocket соединений
-func serveWebSocket(repo *repository.ForumsRepo, w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	forumID, err := strconv.Atoi(vars["forum_id"])
-	if err != nil {
-		http.Error(w, "Invalid forum ID", http.StatusBadRequest)
-		return
-	}
-
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Printf("WebSocket upgrade error: %v", err)
-		http.Error(w, "Could not open websocket connection", http.StatusBadRequest)
-		return
-	}
-	defer unregisterClient(forumID, conn)
-
-	registerClient(forumID, conn)
-
-	// Настройка keep-alive
-	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-		return nil
-	})
-
-	// Чтение входящих сообщений (для поддержания соединения)
-	for {
-		_, _, err := conn.ReadMessage()
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("WebSocket error: %v", err)
-			}
-			break
-		}
-	}
-}
-
-// registerClient - регистрация нового клиента WebSocket
-func registerClient(forumID int, conn *websocket.Conn) {
-	clientsMu.Lock()
-	defer clientsMu.Unlock()
-
-	if clients[forumID] == nil {
-		clients[forumID] = make(map[*websocket.Conn]bool)
-	}
-	clients[forumID][conn] = true
-	log.Printf("New client connected to forum %d", forumID)
-}
-
-// unregisterClient - удаление клиента WebSocket
-func unregisterClient(forumID int, conn *websocket.Conn) {
-	clientsMu.Lock()
-	defer clientsMu.Unlock()
-
-	if clients[forumID] != nil {
-		delete(clients[forumID], conn)
-		log.Printf("Client disconnected from forum %d", forumID)
-	}
-	conn.Close()
 }
 
 func ListForums(repo *repository.ForumsRepo) http.HandlerFunc {

@@ -97,12 +97,12 @@
     <div id="forum-data" data-forum-id="{{ .Forum.ID }}" style="display:none;"></div>
 
     <script>
+        let ws;
         document.addEventListener('DOMContentLoaded', function() {
             const forumId = document.getElementById('forum-data').dataset.forumId;
             const messagesContainer = document.getElementById('messages');
             const messageForm = document.getElementById('message-form');
             const statusElement = document.getElementById('status');
-            let ws;
 
             // WebSocket соединение
             function connectWebSocket() {
@@ -118,30 +118,60 @@
                     console.error('WebSocket error:', error);
                     updateStatus('Connection error', 'error');
                 };
-                ws.onmessage = (event) => {
-                    try {
-                        const data = JSON.parse(event.data);
-                        if (data.type === 'message_created') {
-                            addMessage(data.payload);
-                        }
-                    } catch (e) {
-                        console.error('Error processing message:', e);
+                ws.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    // Проверяем тип сообщения и его структуру
+                    if (data.type === 'message_created' && data.payload) {
+                        console.log("good");
+                        const message = {
+                            author: data.payload.author || 'Аноним',
+                            content: data.payload.content || '',
+                            createdAt: data.payload.created_at || new Date().toISOString()
+                        };
+                        console.log(message);
+                        
+                        addMessageToDOM(message);
+                    } else {
+                        console.warn('Unknown message format:', data);
                     }
-                };
+                } catch (e) {
+                    console.error('Message processing error:', e, 'Raw data:', event.data);
+                }
+            };
             }
 
             // Добавление сообщения в чат
-            function addMessage(message) {
-                const messageElement = document.createElement('div');
-                messageElement.className = 'message';
-                messageElement.innerHTML = `
-                    <div class="message-author">${escapeHtml(message.Author)}</div>
-                    <div class="message-content">${escapeHtml(message.Content)}</div>
-                    <div class="message-time">${new Date(message.CreatedAt).toLocaleString()}</div>
-                `;
-                messagesContainer.appendChild(messageElement);
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            function addMessageToDOM(message) {
+            const messagesContainer = document.getElementById('messages');
+            const messageElement = document.createElement('div');
+            messageElement.className = 'message';
+            messageElement.innerHTML = `
+                <div class="message-author">${escapeHtml(message.author)}</div>
+                <div class="message-content">${escapeHtml(message.content)}</div>
+                <div class="message-time">${formatDateTime(message.createdAt)}</div>
+            `;
+            messagesContainer.appendChild(messageElement);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
+
+            function formatDateTime(isoString) {
+    const date = new Date(isoString);
+    
+    // Получаем компоненты даты
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    
+    // Получаем компоненты времени
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    
+    // Собираем в нужный формат
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
 
             // Отправка сообщения
             messageForm.addEventListener('submit', async (e) => {

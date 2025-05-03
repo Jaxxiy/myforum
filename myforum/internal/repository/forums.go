@@ -126,7 +126,7 @@ func (r *ForumsRepo) GetMessages(forumID int) ([]business.Message, error) {
 		SELECT id, forum_id, author, content, created_at 
 		FROM messages 
 		WHERE forum_id = $1 
-		ORDER BY created_at DESC`, forumID)
+		ORDER BY created_at`, forumID)
 	if err != nil {
 		return nil, err
 	}
