@@ -536,12 +536,25 @@ ws.onclose = function(event) {
             <div class="message-author">${escapeHtml(data.username)}:</div>
             <div class="message-content">${escapeHtml(data.text)}</div>
             <div class="message-time" style="font-size:12px;color:#666">
-                ${new Date().toLocaleTimeString()}
-            </div>
+                    ${escapeHtml(formatMessageTimestamp(data.timestamp))}
+                </div>
         `;
         chatMessages.appendChild(messageElement);
         chatMessages.scrollTop = chatMessages.scrollHeight;
     };
+
+    function formatMessageTimestamp(timestamp) {
+    const date = new Date(timestamp);
+    
+    // Получаем компоненты даты
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    
+    return `${year}-${month}-${day} ${hours}:${minutes}`;
+}
 
     // Функция отправки сообщения (POST-запрос на сервер)
     async function sendMessage() {
