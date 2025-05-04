@@ -179,3 +179,52 @@ func (r *ForumsRepo) PutMessage(messageID int, updatedContent string) (*business
 
 	return &updatedMessage, nil
 }
+
+func (r *ForumsRepo) CreateGlobalMessage(msg business.GlobalMessage) (int, error) {
+	var id int
+	err := r.DB.QueryRow(`
+		INSERT INTO chat_messages (author, message, created_at) 
+		VALUES ($1, $2, $3) 
+		RETURNING id`,
+		msg.Author, msg.Content, msg.CreatedAt,
+	).Scan(&id)
+
+	if err != nil {
+		return 0, fmt.Errorf("insert global message failed: %w", err)
+	}
+
+	return id, nil
+}
+
+// GetGlobalMessages возвращает последние сообщения из мини-чата
+func (r *ForumsRepo) GetGlobalMessages(limit int) ([]business.GlobalMessage, error) {
+	rows, err := r.DB.Query(`
+		SELECT id, author, message, created_at
+		FROM chat_messages
+		ORDER BY created_at DESC
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get global messages: %w", err)
+	}
+	defer rows.Close()
+
+	var messages []business.GlobalMessage
+	for rows.Next() {
+		var m business.GlobalMessage
+		if err := rows.Scan(&m.ID, &m.Author, &m.Content, &m.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan global message: %w", err)
+		}
+		messages = append(messages, m)
+	}
+
+	return messages, nil
+}
+
+// DeleteGlobalMessage удаляет сообщение из мини-чата по ID
+func (r *ForumsRepo) DeleteGlobalMessage(id int) error {
+	_, err := r.DB.Exec("DELETE FROM chat_messages WHERE id = $1", id)
+	if err != nil {
+		return fmt.Errorf("failed to delete global message: %w", err)
+	}
+	return nil
+}

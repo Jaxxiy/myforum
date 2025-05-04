@@ -28,7 +28,31 @@ var (
 	}
 	clients   = make(map[int]map[*websocket.Conn]bool) // forumID -> connections
 	clientsMu sync.RWMutex
+
+	//mini-chat
+	globalChatClients  = make(map[*websocket.Conn]bool)
+	globalChatMu       sync.RWMutex
+	globalChatUpgrader = websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			return true // Для разработки
+		},
+	}
+	globalChatBroadcast = make(chan GlobalChatMessage)
+	globalChatHistory   []GlobalChatMessage
 )
+
+type GlobalChatMessageRequest struct {
+	Author  string `json:"username"`
+	Content string `json:"text"`
+}
+
+type GlobalChatMessage struct {
+	Author    string    `json:"username"`
+	Content   string    `json:"text"`
+	CreatedAt time.Time `json:"timestamp"`
+}
 
 type WSMessage struct {
 	Type    string      `json:"type"`
@@ -36,9 +60,12 @@ type WSMessage struct {
 }
 
 func RegisterForumHandlers(r *mux.Router, repo *repository.ForumsRepo) {
+	r.HandleFunc("/ws/global", serveGlobalChat)
+
 	r.HandleFunc("/ws/{forum_id:[0-9]+}", func(w http.ResponseWriter, r *http.Request) {
 		serveWebSocket(w, r)
 	})
+	go handleGlobalChatMessages()
 
 	api := r.PathPrefix("/api").Subrouter()
 
@@ -55,7 +82,8 @@ func RegisterForumHandlers(r *mux.Router, repo *repository.ForumsRepo) {
 	api.HandleFunc("/forums/{forum_id:[0-9]+}/messages/{message_id:[0-9]+}", DeleteMessage(repo)).Methods("DELETE")
 	api.HandleFunc("/forums/{id:[0-9]+}/messages/{message_id:[0-9]+}", UpdateMessage(repo)).Methods("PUT")
 
-	// ... другие обработчики
+	api.HandleFunc("/global-chat", handleGlobalChatMessage(repo)).Methods("POST")
+
 }
 
 // Улучшенный обработчик WebSocket
@@ -445,5 +473,145 @@ func renderTemplate(w http.ResponseWriter, tmpl string, data interface{}) {
 	err := templates.ExecuteTemplate(w, tmpl, data)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func serveGlobalChat(w http.ResponseWriter, r *http.Request) {
+	conn, err := globalChatUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("Global chat WebSocket upgrade error: %v", err)
+		return
+	}
+
+	log.Println("Новое WebSocket соединение установлено") // Добавляем логи
+
+	defer func() {
+		log.Println("WebSocket соединение закрыто") // Добавляем логи
+		globalChatMu.Lock()
+		delete(globalChatClients, conn)
+		globalChatMu.Unlock()
+		conn.Close()
+	}()
+
+	// Простая аутентификация (можно улучшить)
+
+	// Регистрация клиента
+	globalChatMu.Lock()
+	globalChatClients[conn] = true
+	globalChatMu.Unlock()
+
+	// Отправка истории чата (только при подключении)
+	globalChatMu.Lock()
+	for _, msg := range globalChatHistory {
+		if err := conn.WriteJSON(msg); err != nil {
+			log.Printf("Error sending chat history: %v", err)
+			break // Прерываем отправку истории, если произошла ошибка
+		}
+	}
+	globalChatMu.Unlock()
+
+	//Читаем сообщения
+	go func() { // Запускаем горутину для чтения сообщений
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
+					log.Printf("Global chat error: %v", err)
+				}
+				globalChatMu.Lock()
+				delete(globalChatClients, conn)
+				globalChatMu.Unlock()
+				conn.Close()
+				break
+			}
+		}
+	}()
+
+}
+
+func handleGlobalChatMessages() {
+	for {
+		msg := <-globalChatBroadcast // Получаем сообщение из канала
+		log.Printf("Новое сообщение для рассылки (Global Chat): %+v", msg)
+		globalChatMu.Lock()
+		// Добавляем сообщение в историю (ограничиваем размер истории)
+		globalChatHistory = append(globalChatHistory, msg)
+		log.Printf("История чата: %+v", globalChatHistory) // Добавили логи
+		if len(globalChatHistory) > 100 {
+			globalChatHistory = globalChatHistory[1:]
+		}
+		for client := range globalChatClients {
+			log.Printf("Отправляем сообщение клиенту (Global Chat): %+v", msg)
+			err := client.WriteJSON(msg) // Отправляем сообщение клиенту
+			if err != nil {
+				log.Printf("Ошибка при отправке сообщения клиенту (Global Chat): %v", err)
+				client.Close()
+				delete(globalChatClients, client)
+			}
+		}
+		globalChatMu.Unlock()
+	}
+}
+
+// Обработчик POST-запроса для глобального чата
+func handleGlobalChatMessage(repo *repository.ForumsRepo) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		// 1. Проверяем Content-Type
+		if !strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+			http.Error(w, `{"error": "Content-Type must be application/json"}`, http.StatusBadRequest)
+			return
+		}
+
+		// 2. Парсим JSON
+		var req GlobalChatMessageRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, `{"error": "Invalid JSON format"}`, http.StatusBadRequest)
+			return
+		}
+		defer r.Body.Close()
+
+		// 3. Валидация
+		if strings.TrimSpace(req.Author) == "" || strings.TrimSpace(req.Content) == "" {
+			http.Error(w, `{"error": "Username and text are required"}`, http.StatusBadRequest)
+			return
+		}
+
+		// 4. Создаем структуру business.GlobalMessage для сохранения в БД
+		msgBusiness := business.GlobalMessage{
+			Author:    req.Author,
+			Content:   req.Content,
+			CreatedAt: time.Now(),
+		}
+
+		// 5. Сохраняем в БД
+		id, err := repo.CreateGlobalMessage(msgBusiness)
+		if err != nil {
+			log.Printf("DB error: %v", err)
+			http.Error(w, `{"error": "Failed to save message"}`, http.StatusInternalServerError)
+			return
+		}
+
+		// 6. Создаем структуру GlobalChatMessage для отправки в WebSocket
+		msgWebSocket := GlobalChatMessage{
+			Author:    req.Author,
+			Content:   req.Content,
+			CreatedAt: time.Now(),
+		}
+		log.Printf("Sending message %v to websocket", msgWebSocket)
+
+		// 7. Отправляем в WebSocket
+		globalChatBroadcast <- msgWebSocket
+
+		// 8. Успешный ответ
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":        id,
+			"username":  req.Author,
+			"text":      req.Content,
+			"timestamp": time.Now(),
+		})
+
 	}
 }

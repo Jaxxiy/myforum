@@ -59,35 +59,6 @@ func NewServer() *Server {
 		log.Fatalf("Ошибка применения миграций: %v", err)
 	}
 
-	/*
-		forumRepo := repository.NewForumsRepo(db.DB)
-		handlers.RegisterForumHandlers(r, forumRepo)
-
-		// 2. Затем статические файлы (CSS, JS, изображения)
-		//r.PathPrefix("/static/").Handler(
-		//http.StripPrefix("/static/",
-		//	http.FileServer(http.Dir("static"))))
-
-		// 3. HTML-шаблоны (отдельный обработчик)
-		r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			// Рендерим главную страницу
-			tmpl, err := template.ParseFiles("templates/base.html")
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			tmpl.Execute(w, nil)
-		})
-
-		// 4. Fallback для SPA (если используете фронтенд)
-		r.PathPrefix("/").Handler(http.FileServer(http.Dir("frontend")))
-
-		httpSrv := &http.Server{
-			Addr:    ":8080",
-			Handler: r,
-		}
-	*/
-
 	// Создаем репозиторий форумов
 	forumRepo := repository.NewForumsRepo(db.DB) // предполагается, что db.DB это *sql.DB
 
