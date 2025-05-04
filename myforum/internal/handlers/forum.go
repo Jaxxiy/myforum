@@ -483,50 +483,55 @@ func serveGlobalChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Println("Новое WebSocket соединение установлено") // Добавляем логи
+	log.Println("Новое WebSocket соединение установлено")
 
 	defer func() {
-		log.Println("WebSocket соединение закрыто") // Добавляем логи
+		log.Println("WebSocket соединение закрыто")
 		globalChatMu.Lock()
 		delete(globalChatClients, conn)
 		globalChatMu.Unlock()
 		conn.Close()
 	}()
 
-	// Простая аутентификация (можно улучшить)
-
 	// Регистрация клиента
 	globalChatMu.Lock()
 	globalChatClients[conn] = true
 	globalChatMu.Unlock()
 
-	// Отправка истории чата (только при подключении)
+	// Отправка истории чата
 	globalChatMu.Lock()
 	for _, msg := range globalChatHistory {
 		if err := conn.WriteJSON(msg); err != nil {
 			log.Printf("Error sending chat history: %v", err)
-			break // Прерываем отправку истории, если произошла ошибка
+			break
 		}
 	}
 	globalChatMu.Unlock()
 
-	//Читаем сообщения
-	go func() { // Запускаем горутину для чтения сообщений
-		for {
-			_, _, err := conn.ReadMessage()
-			if err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
-					log.Printf("Global chat error: %v", err)
-				}
-				globalChatMu.Lock()
-				delete(globalChatClients, conn)
-				globalChatMu.Unlock()
-				conn.Close()
-				break
+	// Чтение сообщений в бесконечном цикле (без горутины!)
+	for {
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
+				log.Printf("Global chat error: %v", err)
+			}
+			break
+		}
+
+		// Обработка нового сообщения
+		log.Printf("Получено сообщение: %s", message)
+
+		// Пример: рассылка всем клиентам
+		globalChatMu.Lock()
+		for client := range globalChatClients {
+			if err := client.WriteJSON(string(message)); err != nil {
+				log.Printf("Ошибка отправки: %v", err)
+				client.Close()
+				delete(globalChatClients, client)
 			}
 		}
-	}()
-
+		globalChatMu.Unlock()
+	}
 }
 
 func handleGlobalChatMessages() {
