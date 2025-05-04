@@ -139,7 +139,7 @@
 
     // Подключение WebSocket
     const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-    const ws = new WebSocket(`ws://localhost:8082/ws/global`);
+    const ws = new WebSocket(`${protocol}${window.location.host}/ws/global`);
 
     ws.onopen = function(event) {
     console.log('WebSocket connected');
