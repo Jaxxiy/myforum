@@ -24,5 +24,171 @@
         <small>Создано: {{ .CreatedAt.Format "2006-01-02 15:04" }}</small>
     </div>
     {{ end }}
+    <div id="mini-chat">
+        <div id="chat-header">
+            <span>Общий чат</span>
+            <button id="toggle-chat">−</button>
+        </div>
+        <div id="chat-messages"></div>
+        <div id="chat-input">
+            <input type="text" id="chat-message" placeholder="Ваше сообщение...">
+            <button id="send-message">Отпр.</button>
+        </div>
+    </div>
+    
+    <style>
+        #mini-chat {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 300px;
+            height: 400px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            z-index: 1000;
+        }
+        
+        #chat-header {
+            padding: 10px;
+            background: #4CAF50;
+            color: white;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        #chat-messages {
+            flex-grow: 1;
+            padding: 10px;
+            overflow-y: auto;
+        }
+        
+        #chat-input {
+            display: flex;
+            padding: 10px;
+            border-top: 1px solid #eee;
+        }
+        
+        #chat-message {
+            flex-grow: 1;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        #send-message {
+            margin-left: 8px;
+            padding: 8px 12px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        #toggle-chat {
+            background: transparent;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        .message {
+            margin-bottom: 8px;
+            padding: 6px 8px;
+            background: #f5f5f5;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .message-author {
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .chat-collapsed {
+            height: 40px !important;
+            width: 150px !important;
+        }
+        
+        .chat-collapsed #chat-messages,
+        .chat-collapsed #chat-input {
+            display: none;
+        }
+    </style>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const chatContainer = document.getElementById('mini-chat');
+            const chatMessages = document.getElementById('chat-messages');
+            const chatInput = document.getElementById('chat-message');
+            const sendButton = document.getElementById('send-message');
+            const toggleButton = document.getElementById('toggle-chat');
+            
+            // Получаем имя пользователя (можно изменить на реальное)
+            const username = localStorage.getItem('chat-username') || 
+                             'User' + Math.floor(Math.random() * 1000);
+            
+            // Подключение WebSocket
+            const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+            const ws = new WebSocket(`ws://localhost:8082/ws/global`);
+            
+            // Обработчик сообщений
+            ws.onmessage = function(event) {
+                console.log("sent")
+                const data = JSON.parse(event.data);
+                const messageElement = document.createElement('div');
+                messageElement.className = 'message';
+                messageElement.innerHTML = `
+                    <div class="message-author">${escapeHtml(data.author)}:</div>
+                    <div class="message-content">${escapeHtml(data.message)}</div>
+                    <div class="message-time" style="font-size:12px;color:#666">
+                        ${new Date().toLocaleTimeString()}
+                    </div>
+                `;
+                chatMessages.appendChild(messageElement);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            };
+            
+            // Отправка сообщения
+            function sendMessage() {
+                const message = chatInput.value.trim();
+                if (message && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        author: username,
+                        message: message
+                    }));
+                    chatInput.value = '';
+                }
+            }
+            
+            sendButton.addEventListener('click', sendMessage);
+            chatInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') sendMessage();
+            });
+            
+            // Сворачивание/разворачивание чата
+            toggleButton.addEventListener('click', function() {
+                chatContainer.classList.toggle('chat-collapsed');
+                toggleButton.textContent = chatContainer.classList.contains('chat-collapsed') ? '+' : '−';
+            });
+            
+            // Экранирование HTML
+            function escapeHtml(text) {
+                return text
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#039;');
+            }
+        });
+    </script>
 </body>
 </html>
