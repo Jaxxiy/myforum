@@ -228,3 +228,27 @@ func (r *ForumsRepo) DeleteGlobalMessage(id int) error {
 	}
 	return nil
 }
+
+func (r *ForumsRepo) GetGlobalChatHistory(limit int) ([]business.GlobalMessage, error) {
+	rows, err := r.DB.Query(`
+        SELECT id, author, message, created_at 
+        FROM chat_messages
+        ORDER BY created_at ASC 
+        LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var history []business.GlobalMessage
+	for rows.Next() {
+		var msg business.GlobalMessage
+		err := rows.Scan(&msg.ID, &msg.Author, &msg.Content, &msg.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		history = append(history, msg)
+	}
+
+	return history, nil
+}

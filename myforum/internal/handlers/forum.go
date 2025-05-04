@@ -60,7 +60,9 @@ type WSMessage struct {
 }
 
 func RegisterForumHandlers(r *mux.Router, repo *repository.ForumsRepo) {
-	r.HandleFunc("/ws/global", serveGlobalChat)
+	r.HandleFunc("/ws/global", func(w http.ResponseWriter, r *http.Request) {
+		serveGlobalChat(w, r, repo)
+	})
 
 	r.HandleFunc("/ws/{forum_id:[0-9]+}", func(w http.ResponseWriter, r *http.Request) {
 		serveWebSocket(w, r)
@@ -476,7 +478,7 @@ func renderTemplate(w http.ResponseWriter, tmpl string, data interface{}) {
 	}
 }
 
-func serveGlobalChat(w http.ResponseWriter, r *http.Request) {
+func serveGlobalChat(w http.ResponseWriter, r *http.Request, repo *repository.ForumsRepo) {
 	conn, err := globalChatUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("Global chat WebSocket upgrade error: %v", err)
@@ -498,58 +500,65 @@ func serveGlobalChat(w http.ResponseWriter, r *http.Request) {
 	globalChatClients[conn] = true
 	globalChatMu.Unlock()
 
-	// Отправка истории чата
-	globalChatMu.Lock()
-	for _, msg := range globalChatHistory {
-		if err := conn.WriteJSON(msg); err != nil {
-			log.Printf("Error sending chat history: %v", err)
-			break
+	// Загрузка истории из БД (последние 100 сообщений)
+	history, err := repo.GetGlobalChatHistory(100)
+	if err != nil {
+		log.Printf("Ошибка загрузки истории чата: %v", err)
+	} else {
+		// Конвертируем в GlobalChatMessage и отправляем
+		for _, msg := range history {
+			chatMsg := GlobalChatMessage{
+				Author:    msg.Author,
+				Content:   msg.Content,
+				CreatedAt: msg.CreatedAt,
+			}
+			if err := conn.WriteJSON(chatMsg); err != nil {
+				log.Printf("Ошибка отправки истории: %v", err)
+				break
+			}
 		}
 	}
-	globalChatMu.Unlock()
 
-	// Чтение сообщений в бесконечном цикле (без горутины!)
+	// Чтение новых сообщений
 	for {
-		_, message, err := conn.ReadMessage()
-		if err != nil {
+		var msg GlobalChatMessage
+		if err := conn.ReadJSON(&msg); err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
 				log.Printf("Global chat error: %v", err)
 			}
 			break
 		}
 
-		// Обработка нового сообщения
-		log.Printf("Получено сообщение: %s", message)
-
-		// Пример: рассылка всем клиентам
-		globalChatMu.Lock()
-		for client := range globalChatClients {
-			if err := client.WriteJSON(string(message)); err != nil {
-				log.Printf("Ошибка отправки: %v", err)
-				client.Close()
-				delete(globalChatClients, client)
-			}
+		// Сохраняем в БД через репозиторий
+		_, err := repo.CreateGlobalMessage(business.GlobalMessage{
+			Author:    msg.Author,
+			Content:   msg.Content,
+			CreatedAt: time.Now(),
+		})
+		if err != nil {
+			log.Printf("Ошибка сохранения сообщения: %v", err)
 		}
-		globalChatMu.Unlock()
+
+		// Рассылка всем клиентам
+		globalChatBroadcast <- msg
 	}
 }
 
 func handleGlobalChatMessages() {
 	for {
-		msg := <-globalChatBroadcast // Получаем сообщение из канала
-		log.Printf("Новое сообщение для рассылки (Global Chat): %+v", msg)
+		msg := <-globalChatBroadcast
 		globalChatMu.Lock()
-		// Добавляем сообщение в историю (ограничиваем размер истории)
+
+		// Обновляем историю в памяти (опционально)
 		globalChatHistory = append(globalChatHistory, msg)
-		log.Printf("История чата: %+v", globalChatHistory) // Добавили логи
 		if len(globalChatHistory) > 100 {
 			globalChatHistory = globalChatHistory[1:]
 		}
+
+		// Рассылка
 		for client := range globalChatClients {
-			log.Printf("Отправляем сообщение клиенту (Global Chat): %+v", msg)
-			err := client.WriteJSON(msg) // Отправляем сообщение клиенту
-			if err != nil {
-				log.Printf("Ошибка при отправке сообщения клиенту (Global Chat): %v", err)
+			if err := client.WriteJSON(msg); err != nil {
+				log.Printf("Ошибка отправки: %v", err)
 				client.Close()
 				delete(globalChatClients, client)
 			}
