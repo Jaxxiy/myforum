@@ -124,139 +124,146 @@
         }
     </style>
     <script>
-       document.addEventListener('DOMContentLoaded', function() {
-    const chatContainer = document.getElementById('mini-chat');
-    const chatMessages = document.getElementById('chat-messages');
-    const chatInput = document.getElementById('chat-message');
-    const sendButton = document.getElementById('send-message');
-    const toggleButton = document.getElementById('toggle-chat');
-
-    // Замените 'YOUR_API_ENDPOINT' на реальный URL вашего API
-    const apiEndpoint = '/api/global-chat';
-
-    // Замените 'username' реальным именем пользователя (полученным, например, из куки или глобальной переменной)
-    const username = 'User'; // Или получи его откуда-нибудь: localStorage.getItem('username') || 'Guest';
-
-    // Подключение WebSocket
-    const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-    const ws = new WebSocket(`${protocol}${window.location.host}/ws/global`);
-
-    ws.onopen = function(event) {
-    console.log('WebSocket connected');
-};
-
-ws.onclose = function(event) {
-    console.log('WebSocket disconnected', event);
-};
-
-    // Обработчик сообщений WebSocket
-    ws.onmessage = function(event) {
-        console.log("qweqweqw")
-        const data = JSON.parse(event.data);
-        console.log(data)
-        const messageElement = document.createElement('div');
-        messageElement.className = 'message';
-        messageElement.innerHTML = `
-            <div class="message-author">${escapeHtml(data.username)}:</div>
-            <div class="message-content">${escapeHtml(data.text)}</div>
-            <div class="message-time" style="font-size:12px;color:#666">
-                    ${escapeHtml(formatMessageTimestamp(data.timestamp))}
-                </div>
-        `;
-        chatMessages.appendChild(messageElement);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-    };
-
-    function formatMessageTimestamp(timestamp) {
-    const date = new Date(timestamp);
-    
-    // Получаем компоненты даты
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    
-    return `${year}-${month}-${day} ${hours}:${minutes}`;
-}
-
-    // Функция отправки сообщения (POST-запрос на сервер)
-    async function sendMessage() {
-        const message = chatInput.value.trim();
-        if (message) {
-            try {
-                const requestBody = JSON.stringify({
-                    username: username,
-                    text: message
-                });
-
-                // Выводим requestBody в консоль
-                console.log('Sending request:', requestBody);
-
-                const response = await fetch(apiEndpoint, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: requestBody
-                });
-
-                // Выводим ответ в консоль
-                console.log('Response:', response);
-
-                if (!response.ok) {
-                    // Выводим текст ошибки в консоль
-                    const errorText = await response.text();
-                    console.error('Error response:', errorText);
-                    throw new Error(`HTTP error! status: ${response.status}, text: ${errorText}`);
+        // Add token verification on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            // Try to get token from localStorage or sessionStorage
+            let token = localStorage.getItem('jwt');
+            if (!token) {
+                token = sessionStorage.getItem('jwt');
+                if (token) {
+                    // Restore token to localStorage if found in sessionStorage
+                    localStorage.setItem('jwt', token);
                 }
-
-                const responseData = await response.json();  // Предполагаем, что сервер возвращает JSON
-                console.log('Message sent successfully:', responseData);
-
-                // Очищаем поле ввода только после успешной отправки
-                chatInput.value = '';
-
-                //Отправляем сообщение через вебсокет
-                if (ws.readyState === WebSocket.OPEN) {
-                    //Не нужно отправлять в вебсокет сообщение, сервер это сделает
-                    //ws.send(JSON.stringify({ username: username, text: message }));
-                }
-
-
-            } catch (error) {
-                console.error('Error sending message:', error);
-                // Обработка ошибки отправки (например, показать сообщение пользователю)
-                alert('Failed to send message. Please try again.');
             }
-        }
-    }
+            
+            console.log('Current token on forums page:', token);
+            
+            // Initialize chat components
+            const chatContainer = document.getElementById('mini-chat');
+            const chatMessages = document.getElementById('chat-messages');
+            const chatInput = document.getElementById('chat-message');
+            const sendButton = document.getElementById('send-message');
+            const toggleButton = document.getElementById('toggle-chat');
 
-    // Обработчики событий
-    sendButton.addEventListener('click', sendMessage);
-    chatInput.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-            e.preventDefault(); // Предотвращаем перенос строки в поле ввода
-            sendMessage();
-        }
-    });
+            // Only check token when trying to send a message
+            async function sendMessage() {
+                const token = localStorage.getItem('jwt');
+                console.log('Token when sending message:', token);
+                
+                if (!token) {
+                    console.log('No token found when trying to send message');
+                    window.location.href = '/auth/login';
+                    return;
+                }
 
-    // Сворачивание/разворачивание чата
-    toggleButton.addEventListener('click', function() {
-        chatContainer.classList.toggle('chat-collapsed');
-        toggleButton.textContent = chatContainer.classList.contains('chat-collapsed') ? '+' : '−';
-    });
+                const message = chatInput.value.trim();
+                if (message) {
+                    try {
+                        const requestBody = JSON.stringify({
+                            username: username,
+                            text: message
+                        });
 
-    // Экранирование HTML
-    function escapeHtml(text) {
-        return text
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
-    }
-});
+                        const response = await fetch(apiEndpoint, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${token}`
+                            },
+                            body: requestBody
+                        });
+
+                        if (!response.ok) {
+                            const errorText = await response.text();
+                            console.error('Error response:', errorText);
+                            throw new Error(`HTTP error! status: ${response.status}, text: ${errorText}`);
+                        }
+
+                        const responseData = await response.json();
+                        console.log('Message sent successfully:', responseData);
+                        chatInput.value = '';
+
+                    } catch (error) {
+                        console.error('Error sending message:', error);
+                        alert('Failed to send message. Please try again.');
+                    }
+                }
+            }
+
+            // Замените 'YOUR_API_ENDPOINT' на реальный URL вашего API
+            const apiEndpoint = '/api/global-chat';
+
+            // Замените 'username' реальным именем пользователя (полученным, например, из куки или глобальной переменной)
+            const username = 'User'; // Или получи его откуда-нибудь: localStorage.getItem('username') || 'Guest';
+
+            // Подключение WebSocket
+            const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+            const ws = new WebSocket(`${protocol}${window.location.host}/ws/global`);
+
+            ws.onopen = function(event) {
+                console.log('WebSocket connected');
+            };
+
+            ws.onclose = function(event) {
+                console.log('WebSocket disconnected', event);
+            };
+
+            // Обработчик сообщений WebSocket
+            ws.onmessage = function(event) {
+                console.log("qweqweqw")
+                const data = JSON.parse(event.data);
+                console.log(data)
+                const messageElement = document.createElement('div');
+                messageElement.className = 'message';
+                messageElement.innerHTML = `
+                    <div class="message-author">${escapeHtml(data.username)}:</div>
+                    <div class="message-content">${escapeHtml(data.text)}</div>
+                    <div class="message-time" style="font-size:12px;color:#666">
+                            ${escapeHtml(formatMessageTimestamp(data.timestamp))}
+                        </div>
+                `;
+                chatMessages.appendChild(messageElement);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            };
+
+            function formatMessageTimestamp(timestamp) {
+                const date = new Date(timestamp);
+                
+                // Получаем компоненты даты
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                
+                return `${year}-${month}-${day} ${hours}:${minutes}`;
+            }
+
+            // Обработчики событий
+            sendButton.addEventListener('click', sendMessage);
+            chatInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault(); // Предотвращаем перенос строки в поле ввода
+                    sendMessage();
+                }
+            });
+
+            // Сворачивание/разворачивание чата
+            toggleButton.addEventListener('click', function() {
+                chatContainer.classList.toggle('chat-collapsed');
+                toggleButton.textContent = chatContainer.classList.contains('chat-collapsed') ? '+' : '−';
+            });
+
+            // Экранирование HTML
+            function escapeHtml(text) {
+                return text
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#039;');
+            }
+        });
     </script>
 </body>
 </html>

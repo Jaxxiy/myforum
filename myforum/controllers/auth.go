@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"html/template"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/jaxxiy/myforum/internal/business"
@@ -91,9 +90,13 @@ func (c *AuthController) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]string{
+	response := map[string]interface{}{
 		"token":    token,
-		"user_id":  strconv.Itoa(user.ID),
+		"user_id":  user.ID,
 		"username": user.Username,
-	})
+		"email":    user.Email,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }

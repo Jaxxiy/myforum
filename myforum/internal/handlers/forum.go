@@ -72,6 +72,9 @@ func RegisterForumHandlers(r *mux.Router, repo *repository.ForumsRepo) {
 
 	api := r.PathPrefix("/api").Subrouter()
 
+	r.HandleFunc("/auth/login", LoginPage).Methods("GET")
+	r.HandleFunc("/auth/register", RegisterPage).Methods("GET")
+
 	api.HandleFunc("/forums", ListForums(repo)).Methods("GET")
 	api.HandleFunc("/forums/new", NewForumForm()).Methods("GET")
 	api.HandleFunc("/forums", CreateForum(repo)).Methods("POST")
@@ -87,6 +90,14 @@ func RegisterForumHandlers(r *mux.Router, repo *repository.ForumsRepo) {
 
 	api.HandleFunc("/global-chat", handleGlobalChatMessage(repo)).Methods("POST")
 
+}
+
+func LoginPage(w http.ResponseWriter, r *http.Request) {
+	templates.ExecuteTemplate(w, "login.html", nil)
+}
+
+func RegisterPage(w http.ResponseWriter, r *http.Request) {
+	templates.ExecuteTemplate(w, "register.html", nil)
 }
 
 // Улучшенный обработчик WebSocket

@@ -47,25 +47,79 @@
             };
 
             try {
-                const response = await fetch('/auth/login', {
+                console.log('Sending login request with data:', formData);
+                const response = await fetch('http://localhost:3000/auth/login', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'Origin': 'http://localhost:8080'
                     },
+                    credentials: 'include',
                     body: JSON.stringify(formData)
                 });
 
-                const data = await response.json();
-                
+                console.log('Response status:', response.status);
+                console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+
                 if (response.ok) {
-                    // Save token to localStorage
-                    localStorage.setItem('token', data.token);
-                    // Redirect to forum page
-                    window.location.href = 'http://localhost:8080/api/forums';
+                    const data = await response.json();
+                    console.log('Response data:', data);
+                    
+                    if (data.token) {
+                        try {
+                            // Clear storage
+                            console.log('Clearing storage...');
+                            localStorage.clear();
+                            sessionStorage.clear();
+                            
+                            // Save token
+                            console.log('Saving token...');
+                            localStorage.setItem('jwt', data.token);
+                            
+                            // Verify immediately
+                            const savedToken = localStorage.getItem('jwt');
+                            console.log('Saved token:', savedToken);
+                            console.log('Original token:', data.token);
+                            
+                            if (savedToken === data.token) {
+                                console.log('Token verification successful');
+                                
+                                // Save user info only if it exists in response
+                                if (data.user_id) {
+                                    localStorage.setItem('user_id', data.user_id);
+                                }
+                                if (data.username) {
+                                    localStorage.setItem('username', data.username);
+                                }
+                                
+                                // Log all storage contents
+                                console.log('localStorage contents:', Object.fromEntries(Object.entries(localStorage)));
+                                
+                                // Redirect after a delay
+                                setTimeout(() => {
+                                    console.log('Before redirect - localStorage contents:', Object.fromEntries(Object.entries(localStorage)));
+                                    window.location.replace('/api/forums');
+                                }, 1000);
+                            } else {
+                                console.error('Token verification failed');
+                                alert('Login successful but token storage failed. Please try again.');
+                            }
+                        } catch (error) {
+                            console.error('Error saving token:', error);
+                            alert('Error saving login information. Please try again.');
+                        }
+                    } else {
+                        console.error('No token in response:', data);
+                        alert('Login failed: No token received');
+                    }
                 } else {
-                    alert(data.error || 'Login failed');
+                    const errorText = await response.text();
+                    console.error('Login failed:', errorText);
+                    alert(errorText || 'Login failed');
                 }
             } catch (error) {
+                console.error('Error during login:', error);
                 alert('An error occurred during login');
             }
         });

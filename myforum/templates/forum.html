@@ -1,0 +1,63 @@
+<script>
+    function checkAuth() {
+        const token = localStorage.getItem('jwt');
+        if (!token) {
+            alert('Please login to send messages');
+            window.location.href = '/auth/login';
+            return false;
+        }
+        return true;
+    }
+
+    document.getElementById('messageForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        if (!checkAuth()) return;
+
+        const message = document.getElementById('message').value;
+        const token = localStorage.getItem('jwt');
+        const forumId = window.location.pathname.split('/').pop();
+
+        try {
+            const response = await fetch(`/api/forums/${forumId}/messages`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ message })
+            });
+
+            if (response.ok) {
+                document.getElementById('message').value = '';
+                // Refresh messages
+                loadMessages();
+            } else {
+                alert('Failed to send message');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+        }
+    });
+
+    async function loadMessages() {
+        const token = localStorage.getItem('jwt');
+        const forumId = window.location.pathname.split('/').pop();
+        
+        try {
+            const response = await fetch(`/api/forums/${forumId}/messages`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (response.ok) {
+                const messages = await response.json();
+                // Update messages display
+                updateMessagesDisplay(messages);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+        }
+    }
+</script> 

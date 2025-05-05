@@ -52,25 +52,31 @@
             };
 
             try {
-                const response = await fetch('/auth/register', {
+                const response = await fetch('http://localhost:3000/auth/register', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'Origin': 'http://localhost:8080'
                     },
+                    credentials: 'include',
                     body: JSON.stringify(formData)
                 });
 
-                const data = await response.json();
-                
                 if (response.ok) {
+                    const data = await response.json();
                     // Save token to localStorage
-                    localStorage.setItem('token', data.token);
+                    if (data.token) {
+                        localStorage.setItem('jwt', data.token);
+                    }
                     // Redirect to forum page
-                    window.location.href = 'http://localhost:8080/api/forums';
+                    window.location.href = '/api/forums';
                 } else {
-                    alert(data.error || 'Registration failed');
+                    const errorText = await response.text();
+                    alert(errorText || 'Registration failed');
                 }
             } catch (error) {
+                console.error('Error:', error);
                 alert('An error occurred during registration');
             }
         });

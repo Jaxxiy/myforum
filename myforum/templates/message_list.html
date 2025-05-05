@@ -633,6 +633,65 @@ ws.onclose = function(event) {
             .replace(/'/g, '&#039;');
     }
 });
+
+function checkAuth() {
+    const token = localStorage.getItem('jwt');
+    if (!token) {
+        alert('Please login to send messages');
+        window.location.href = '/auth/login-page';
+        return false;
+    }
+    return true;
+}
+
+document.getElementById('messageForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    if (!checkAuth()) return;
+
+    const message = document.getElementById('message').value;
+    const token = localStorage.getItem('jwt');
+
+    try {
+        const response = await fetch('/api/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ message })
+        });
+
+        if (response.ok) {
+            document.getElementById('message').value = '';
+            // Refresh messages
+            loadMessages();
+        } else {
+            alert('Failed to send message');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+    }
+});
+
+async function loadMessages() {
+    const token = localStorage.getItem('jwt');
+    try {
+        const response = await fetch('/api/messages', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (response.ok) {
+            const messages = await response.json();
+            // Update messages display
+            updateMessagesDisplay(messages);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+    }
+}
     </script>
 </body>
 </html>
