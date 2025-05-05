@@ -60,8 +60,8 @@
                 if (response.ok) {
                     // Save token to localStorage
                     localStorage.setItem('token', data.token);
-                    // Redirect to home page
-                    window.location.href = '/';
+                    // Redirect to forum page
+                    window.location.href = 'http://localhost:8080/api/forums';
                 } else {
                     alert(data.error || 'Login failed');
                 }
