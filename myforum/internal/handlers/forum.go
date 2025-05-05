@@ -60,6 +60,7 @@ type WSMessage struct {
 }
 
 func RegisterForumHandlers(r *mux.Router, repo *repository.ForumsRepo) {
+
 	r.HandleFunc("/ws/global", func(w http.ResponseWriter, r *http.Request) {
 		serveGlobalChat(w, r, repo)
 	})
