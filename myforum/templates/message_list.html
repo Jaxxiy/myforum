@@ -197,7 +197,7 @@
         </div>
         
         <form id="message-form">
-            <input type="text" id="author" placeholder="Ваше имя" required>
+            <input type="text" id="author" placeholder="Ваше имя" required readonly>
             <textarea id="content" placeholder="Ваше сообщение" required></textarea>
             <button type="submit">Отправить</button>
         </form>
@@ -226,7 +226,22 @@
             const messagesContainer = document.getElementById('messages');
             const messageForm = document.getElementById('message-form');
             const statusElement = document.getElementById('status');
-            let currentUser = 'anonymous'; // Здесь можно получить текущего пользователя
+            const authorInput = document.getElementById('author');
+            
+            // Check authentication and set username
+            const token = localStorage.getItem('jwt');
+            const username = localStorage.getItem('username');
+            
+            if (!token || !username) {
+                authorInput.value = 'Пожалуйста, войдите в систему';
+                authorInput.disabled = true;
+                document.getElementById('content').disabled = true;
+                document.querySelector('#message-form button[type="submit"]').disabled = true;
+                updateStatus('Пожалуйста, войдите в систему для отправки сообщений', 'error');
+            } else {
+                authorInput.value = username;
+                console.log('User authenticated:', username);
+            }
     
             // WebSocket соединение
             function connectWebSocket() {
@@ -280,7 +295,7 @@
     messageElement.dataset.messageId = message.id;
     
     // Проверяем, является ли текущий пользователь автором
-    const isAuthor = message.author === currentUser;
+    const isAuthor = message.author === username;
     
     messageElement.innerHTML = `
         <div class="message-author">${escapeHtml(message.author)}</div>
@@ -367,11 +382,19 @@
             messageForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 
-                const author = document.getElementById('author').value.trim();
+                const token = localStorage.getItem('jwt');
+                const username = localStorage.getItem('username');
+                
+                if (!token || !username) {
+                    updateStatus('Пожалуйста, войдите в систему', 'error');
+                    window.location.href = '/auth/login';
+                    return;
+                }
+                
                 const content = document.getElementById('content').value.trim();
                 
-                if (!author || !content) {
-                    updateStatus('Please fill all fields', 'error');
+                if (!content) {
+                    updateStatus('Пожалуйста, введите сообщение', 'error');
                     return;
                 }
     
@@ -380,11 +403,14 @@
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
-                            'Accept': 'application/json'
+                            'Accept': 'application/json',
+                            'Authorization': `Bearer ${token}`
                         },
-                        body: JSON.stringify({ author, content })
+                        body: JSON.stringify({ 
+                            author: username,
+                            content: content 
+                        })
                     });
-                    console.log(response)
     
                     const data = await response.json();
                     
@@ -511,7 +537,7 @@
     const apiEndpoint = '/api/global-chat';
 
     // Замените 'username' реальным именем пользователя (полученным, например, из куки или глобальной переменной)
-    const username = 'User'; // Или получи его откуда-нибудь: localStorage.getItem('username') || 'Guest';
+    const username = localStorage.getItem('username') || 'Guest'; // Или получи его откуда-нибудь: localStorage.getItem('username') || 'Guest';
 
     // Подключение WebSocket
     const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
@@ -558,6 +584,13 @@ ws.onclose = function(event) {
 
     // Функция отправки сообщения (POST-запрос на сервер)
     async function sendMessage() {
+        const token = localStorage.getItem('jwt');
+        if (!token) {
+            alert('Пожалуйста, войдите в аккаунт, чтобы отправлять сообщения в мини-чате.');
+            window.location.href = '/auth/login';
+            return;
+        }
+        const username = localStorage.getItem('username') || 'Guest';
         const message = chatInput.value.trim();
         if (message) {
             try {
@@ -572,7 +605,8 @@ ws.onclose = function(event) {
                 const response = await fetch(apiEndpoint, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
                     },
                     body: requestBody
                 });

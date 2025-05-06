@@ -194,7 +194,7 @@
             const apiEndpoint = '/api/global-chat';
 
             // Замените 'username' реальным именем пользователя (полученным, например, из куки или глобальной переменной)
-            const username = 'User'; // Или получи его откуда-нибудь: localStorage.getItem('username') || 'Guest';
+            const username = localStorage.getItem('username') || 'Guest'; // Или получи его откуда-нибудь: 
 
             // Подключение WebSocket
             const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
