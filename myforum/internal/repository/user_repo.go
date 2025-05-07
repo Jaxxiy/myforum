@@ -18,8 +18,8 @@ func NewUserRepo(db *sql.DB) *UserRepo {
 
 func (r *UserRepo) Create(user business.User) (int, error) {
 	query := `
-		INSERT INTO users (username, email, password, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO users (username, email, password, role, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id`
 
 	var id int
@@ -28,6 +28,7 @@ func (r *UserRepo) Create(user business.User) (int, error) {
 		user.Username,
 		user.Email,
 		user.Password,
+		user.Role,
 		time.Now(),
 		time.Now(),
 	).Scan(&id)
@@ -41,7 +42,7 @@ func (r *UserRepo) Create(user business.User) (int, error) {
 
 func (r *UserRepo) GetByUsername(username string) (*business.User, error) {
 	query := `
-		SELECT id, username, email, password, created_at, updated_at
+		SELECT id, username, email, password, role, created_at, updated_at
 		FROM users
 		WHERE username = $1`
 
@@ -51,6 +52,7 @@ func (r *UserRepo) GetByUsername(username string) (*business.User, error) {
 		&user.Username,
 		&user.Email,
 		&user.Password,
+		&user.Role,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -67,7 +69,7 @@ func (r *UserRepo) GetByUsername(username string) (*business.User, error) {
 
 func (r *UserRepo) GetByEmail(email string) (*business.User, error) {
 	query := `
-		SELECT id, username, email, password, created_at, updated_at
+		SELECT id, username, email, password, role, created_at, updated_at
 		FROM users
 		WHERE email = $1`
 
@@ -77,6 +79,33 @@ func (r *UserRepo) GetByEmail(email string) (*business.User, error) {
 		&user.Username,
 		&user.Email,
 		&user.Password,
+		&user.Role,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, errors.New("user not found")
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return user, nil
+}
+
+func (r *UserRepo) GetUserByID(userID int) (*business.User, error) {
+	query := `
+        SELECT id, username, email, role, created_at, updated_at
+        FROM users
+        WHERE id = $1`
+
+	user := &business.User{}
+	err := r.db.QueryRow(query, userID).Scan(
+		&user.ID,
+		&user.Username,
+		&user.Email,
+		&user.Role,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)

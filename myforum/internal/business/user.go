@@ -11,6 +11,7 @@ type User struct {
 	Password  string    `json:"-"` // Password is never sent in JSON responses
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	Role      string    `json:"role"`
 }
 
 type LoginRequest struct {

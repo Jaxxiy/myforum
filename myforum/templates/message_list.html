@@ -85,6 +85,18 @@
             background: #ffebee;
             color: #c62828;
         }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        .error {
+            text-align: center;
+            padding: 20px;
+            color: #c62828;
+            background: #ffebee;
+            border-radius: 4px;
+        }
         #mini-chat {
             position: fixed;
             bottom: 20px;
@@ -227,34 +239,50 @@
 
             async function loadMessages() {
                 try {
-                    // Формируем headers только если есть токен
-                    const headers = {};
+                    messagesContainer.innerHTML = '<div class="loading">Загрузка сообщений...</div>';
+                    
+                    const headers = {
+                        'Content-Type': 'application/json'
+                    };
                     if (token) {
                         headers['Authorization'] = `Bearer ${token}`;
                     }
+                    console.log(headers);
+                    console.log(token);
+                    
                     const response = await fetch(`/api/forums/${forumId}/messages-list`, { headers });
-                    if (!response.ok) throw new Error('Ошибка загрузки сообщений');
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
                     const data = await response.json();
-                    const messages = data.messages;
-                    // Если нет токена, currentUser будет пустым — это нормально
+                    console.log(data);
+                    const messages = data.messages || [];
                     const currentUser = data.currentUser || '';
+                    const currentRole = data.currentRole || '';
+                    
                     messagesContainer.innerHTML = '';
-                    messages.forEach(msg => addMessageToDOM(msg, currentUser));
+                    messages.forEach(msg => addMessageToDOM(msg, currentUser, currentRole));
                 } catch (e) {
+                    console.error('Error loading messages:', e);
                     updateStatus('Ошибка загрузки сообщений', 'error');
+                    messagesContainer.innerHTML = '<div class="error">Не удалось загрузить сообщения</div>';
                 }
             }
 
-            function addMessageToDOM(message, currentUser) {
+            function addMessageToDOM(message, currentUser, currentRole) {
                 const messageElement = document.createElement('div');
                 messageElement.className = 'message';
                 messageElement.dataset.messageId = message.id;
+                // admin может всё, обычный пользователь — только свои
                 const isAuthor = message.author === currentUser;
+                const isAdmin = currentRole === 'admin';
+                const canEdit = isAuthor || isAdmin;
                 messageElement.innerHTML = `
                     <div class="message-author">${escapeHtml(message.author)}</div>
                     <div class="message-content">${escapeHtml(message.content)}</div>
                     <div class="message-time">${formatDateTime(message.createdAt || message.created_at)}</div>
-                    ${isAuthor ? `
+                    ${canEdit ? `
                         <div class="message-actions">
                             <button class="edit-btn">Изменить</button>
                             <button class="delete-btn">Удалить</button>
@@ -464,7 +492,7 @@
                         switch(data.type) {
                             case 'message_created':
                                 const message = { ...data.payload, createdAt: data.payload.created_at || formatDateTime(new Date().toISOString()) };
-                                addMessageToDOM(message, username);
+                                addMessageToDOM(message, username, data.currentRole || '');
                                 break;
                             case 'message_updated':
                                 updateMessageInDOM(data.payload, username);

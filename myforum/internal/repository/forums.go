@@ -255,7 +255,7 @@ func (r *ForumsRepo) GetGlobalChatHistory(limit int) ([]business.GlobalMessage, 
 
 func (r *ForumsRepo) GetUserByID(userID int) (*business.User, error) {
 	query := `
-        SELECT id, username, email, created_at, updated_at
+        SELECT id, username, email, created_at, updated_at, role
         FROM users
         WHERE id = $1`
 
@@ -266,6 +266,7 @@ func (r *ForumsRepo) GetUserByID(userID int) (*business.User, error) {
 		&user.Email,
 		&user.CreatedAt,
 		&user.UpdatedAt,
+		&user.Role,
 	)
 
 	if err == sql.ErrNoRows {
@@ -276,4 +277,16 @@ func (r *ForumsRepo) GetUserByID(userID int) (*business.User, error) {
 	}
 
 	return user, nil
+}
+
+func (r *ForumsRepo) GetMessageByID(messageID int) (*business.Message, error) {
+	var m business.Message
+	err := r.DB.QueryRow(
+		"SELECT id, forum_id, author, content, created_at FROM messages WHERE id = $1",
+		messageID,
+	).Scan(&m.ID, &m.ForumID, &m.Author, &m.Content, &m.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
 }

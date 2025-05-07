@@ -224,6 +224,28 @@ func PostMessage(repo *repository.ForumsRepo) http.HandlerFunc {
 			return
 		}
 
+		// Получаем пользователя из токена
+		authHeader := r.Header.Get("Authorization")
+		var user *business.User
+		if authHeader != "" {
+			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+			if claims, err := jwt.ParseToken(tokenString, "your-secret-key"); err == nil {
+				if u, err := repo.GetUserByID(claims.UserID); err == nil {
+					user = u
+				}
+			}
+		}
+		if user == nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		// Проверяем права: автор или admin
+		if user.Username != req.Author && user.Role != "admin" {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+
 		// Создаем сообщение
 		msg := business.Message{
 			ForumID:   forumID,
@@ -419,28 +441,30 @@ func GetMessages(repo *repository.ForumsRepo) http.HandlerFunc {
 			return
 		}
 
-		// Получаем текущего пользователя из JWT токена
+		// Получаем текущего пользователя и роль из JWT токена
 		authHeader := r.Header.Get("Authorization")
-		var currentUser string
+		var currentUser, currentRole string
 		if authHeader != "" {
 			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 			if claims, err := jwt.ParseToken(tokenString, "your-secret-key"); err == nil {
-				// Получаем пользователя из базы данных по ID
 				if user, err := repo.GetUserByID(claims.UserID); err == nil {
 					currentUser = user.Username
+					currentRole = user.Role
 				}
 			}
 		}
 
-		// Рендерим шаблон
+		// Рендерим шаблон (если нужно использовать роль в шаблоне)
 		data := struct {
 			Forum       *business.Forum
 			Messages    []business.Message
 			CurrentUser string
+			CurrentRole string
 		}{
 			Forum:       forum,
 			Messages:    messages,
 			CurrentUser: currentUser,
+			CurrentRole: currentRole,
 		}
 
 		renderTemplate(w, "message_list.html", data)
@@ -467,6 +491,35 @@ func UpdateMessage(repo *repository.ForumsRepo) http.HandlerFunc {
 			return
 		}
 
+		// Получаем пользователя из токена
+		authHeader := r.Header.Get("Authorization")
+		var user *business.User
+		if authHeader != "" {
+			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+			if claims, err := jwt.ParseToken(tokenString, "your-secret-key"); err == nil {
+				if u, err := repo.GetUserByID(claims.UserID); err == nil {
+					user = u
+				}
+			}
+		}
+		if user == nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		// Получаем сообщение
+		msg, err := repo.GetMessageByID(messageID)
+		if err != nil {
+			http.Error(w, "Message not found", http.StatusNotFound)
+			return
+		}
+
+		// Проверяем права: автор или admin
+		if user.Username != msg.Author && user.Role != "admin" {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+
 		// Обновляем сообщение в репозитории
 		updatedMessage, err := repo.PutMessage(messageID, request.Content)
 		if err != nil {
@@ -488,6 +541,35 @@ func DeleteMessage(repo *repository.ForumsRepo) http.HandlerFunc {
 		messageID, err := strconv.Atoi(vars["message_id"])
 		if err != nil {
 			http.Error(w, "Invalid message ID", http.StatusBadRequest)
+			return
+		}
+
+		// Получаем пользователя из токена
+		authHeader := r.Header.Get("Authorization")
+		var user *business.User
+		if authHeader != "" {
+			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+			if claims, err := jwt.ParseToken(tokenString, "your-secret-key"); err == nil {
+				if u, err := repo.GetUserByID(claims.UserID); err == nil {
+					user = u
+				}
+			}
+		}
+		if user == nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		// Получаем сообщение
+		msg, err := repo.GetMessageByID(messageID)
+		if err != nil {
+			http.Error(w, "Message not found", http.StatusNotFound)
+			return
+		}
+
+		// Проверяем права: автор или admin
+		if user.Username != msg.Author && user.Role != "admin" {
+			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
 
@@ -678,20 +760,24 @@ func GetMessagesAPI(repo *repository.ForumsRepo) http.HandlerFunc {
 
 		// Получаем текущего пользователя из JWT токена
 		authHeader := r.Header.Get("Authorization")
-		var currentUser string
+		fmt.Println(authHeader)
+		var currentUser, currentRole string
 		if authHeader != "" {
 			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 			if claims, err := jwt.ParseToken(tokenString, "your-secret-key"); err == nil {
 				if user, err := repo.GetUserByID(claims.UserID); err == nil {
 					currentUser = user.Username
+					currentRole = user.Role
 				}
 			}
 		}
-
+		fmt.Println(currentUser)
+		fmt.Println(currentRole)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"messages":    messages,
 			"currentUser": currentUser,
+			"currentRole": currentRole,
 		})
 	}
 }

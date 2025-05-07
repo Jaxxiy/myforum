@@ -43,6 +43,7 @@ func (s *AuthService) Register(req business.RegisterRequest) (*business.AuthResp
 		Username:  req.Username,
 		Email:     req.Email,
 		Password:  string(hashedPassword),
+		Role:      "user", // всегда user
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -91,20 +92,18 @@ func (s *AuthService) Login(req business.LoginRequest) (*business.AuthResponse, 
 }
 
 func (s *AuthService) generateToken(user business.User) (string, error) {
-	// Create token
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id":  user.ID,
 		"username": user.Username,
-		"exp":      time.Now().Add(time.Hour * 24).Unix(), // Token expires in 24 hours
+		"role":     user.Role,
+		"exp":      time.Now().Add(time.Hour * 24).Unix(),
 	})
 
-	// Get JWT secret from environment variable
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
-		jwtSecret = "your-secret-key" // Default secret key for development
+		jwtSecret = "your-secret-key"
 	}
 
-	// Sign token
 	tokenString, err := token.SignedString([]byte(jwtSecret))
 	if err != nil {
 		return "", err

@@ -10,8 +10,8 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/postgres"
+	//"github.com/golang-migrate/migrate/v4"
+	//"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 
 	"github.com/gorilla/mux"
@@ -40,24 +40,25 @@ func NewServer() *Server {
 		log.Fatalf("Не удалось подключиться к базе данных: %v", err)
 	}
 
-	driver, err := postgres.WithInstance(db.DB, &postgres.Config{})
-	if err != nil {
-		log.Fatalf("Не удалось создать драйвер миграций: %v", err)
-	}
+	//driver, err := postgres.WithInstance(db.DB, &postgres.Config{})
+	//if err != nil {
+	//	log.Fatalf("Не удалось создать драйвер миграций: %v", err)
+	//}
 
-	m, err := migrate.NewWithDatabaseInstance(
-		"file://../../migrations", // путь к папке с миграциями
-		"forum",                   // имя БД
-		driver,
-	)
+	//m, err := migrate.NewWithDatabaseInstance(
+	//	"file://../../migrations", // путь к папке с миграциями
+	//	"forum",                   // имя БД
+	//	driver,
+	//)
+
 	if err != nil {
 		log.Fatalf("Ошибка инициализации миграций: %v", err)
 	}
 
 	// Применяем миграции
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		log.Fatalf("Ошибка применения миграций: %v", err)
-	}
+	//if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+	//	log.Fatalf("Ошибка применения миграций: %v", err)
+	//}
 
 	// Создаем репозиторий форумов
 	forumRepo := repository.NewForumsRepo(db.DB) // предполагается, что db.DB это *sql.DB
