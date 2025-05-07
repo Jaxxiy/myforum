@@ -177,26 +177,7 @@
         <h1>{{ .Forum.Title }}</h1>
         <p>{{ .Forum.Description }}</p>
         
-        <div id="messages" class="messages">
-            {{ range .Messages }}
-            <div class="message" data-message-id="{{ .ID }}">
-                <div class="message-author">{{ .Author }}</div>
-                <div class="message-content">{{ .Content }}</div>
-                <div class="message-time">{{ .CreatedAt.Format "2006-01-02 15:04:05" }}</div>
-                {{ if eq .Author $.CurrentUser }}
-                <div class="message-actions">
-                    <button class="edit-btn">Изменить</button>
-                    <button class="delete-btn">Удалить</button>
-                </div>
-                <div class="edit-form" style="display:none">
-                    <textarea class="edit-content">{{ .Content }}</textarea>
-                    <button class="save-edit">Сохранить</button>
-                    <button class="cancel-edit">Отмена</button>
-                </div>
-                {{ end }}
-            </div>
-            {{ end }}
-        </div>
+        <div id="messages" class="messages"></div>
         
         <form id="message-form">
             <input type="text" id="author" placeholder="Ваше имя" required readonly>
@@ -222,18 +203,18 @@
     
 
     <script>
+        // === ФОРУМ ===
         let ws;
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', async function() {
+            // --- Форум ---
             const forumId = document.getElementById('forum-data').dataset.forumId;
             const messagesContainer = document.getElementById('messages');
             const messageForm = document.getElementById('message-form');
             const statusElement = document.getElementById('status');
             const authorInput = document.getElementById('author');
-            
-            // Check authentication and set username
             const token = localStorage.getItem('jwt');
             const username = localStorage.getItem('username');
-            
+
             if (!token || !username) {
                 authorInput.value = 'Пожалуйста, войдите в систему';
                 authorInput.disabled = true;
@@ -242,68 +223,37 @@
                 updateStatus('Пожалуйста, войдите в систему для отправки сообщений', 'error');
             } else {
                 authorInput.value = username;
-                console.log('User authenticated:', username);
             }
-    
-            // WebSocket соединение
-            function connectWebSocket() {
-                const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-                ws = new WebSocket(`${protocol}${window.location.host}/ws/${forumId}`);
-    
-                ws.onopen = () => updateStatus('Connected to chat', 'success');
-                ws.onclose = () => {
-                    updateStatus('Connection lost. Reconnecting...', 'error');
-                    setTimeout(connectWebSocket, 5000);
-                };
-                ws.onerror = (error) => {
-                    console.error('WebSocket error:', error);
-                    updateStatus('Connection error', 'error');
-                };
-                ws.onmessage = function(event) {
-    try {
-        const data = JSON.parse(event.data);
-        
-        switch(data.type) {
-            case 'message_created':
-            const message = {
-                ...data.payload,
-                createdAt: data.payload.created_at || formatDateTime(new Date().toISOString())
-            };
-            addMessageToDOM(message);
-                break;
-                
-            case 'message_updated':
-                updateMessageInDOM(data.payload);
-                break;
-                
-            case 'message_deleted':
-                removeMessageFromDOM(data.payload.messageId);
-                break;
-                
-            default:
-                console.warn('Unknown message type:', data.type);
-        }
-    } catch (e) {
-        console.error('Message processing error:', e, 'Raw data:', event.data);
-    }
-};
+
+            async function loadMessages() {
+                try {
+                    // Формируем headers только если есть токен
+                    const headers = {};
+                    if (token) {
+                        headers['Authorization'] = `Bearer ${token}`;
+                    }
+                    const response = await fetch(`/api/forums/${forumId}/messages-list`, { headers });
+                    if (!response.ok) throw new Error('Ошибка загрузки сообщений');
+                    const data = await response.json();
+                    const messages = data.messages;
+                    // Если нет токена, currentUser будет пустым — это нормально
+                    const currentUser = data.currentUser || '';
+                    messagesContainer.innerHTML = '';
+                    messages.forEach(msg => addMessageToDOM(msg, currentUser));
+                } catch (e) {
+                    updateStatus('Ошибка загрузки сообщений', 'error');
+                }
             }
-    
-            // Добавление сообщения в чат
-            function addMessageToDOM(message) {
-                const messagesContainer = document.getElementById('messages');
+
+            function addMessageToDOM(message, currentUser) {
                 const messageElement = document.createElement('div');
                 messageElement.className = 'message';
                 messageElement.dataset.messageId = message.id;
-                
-                // Проверяем, является ли текущий пользователь автором
-                const currentUsername = localStorage.getItem('username');
-                const isAuthor = message.author === currentUsername;
-                
+                const isAuthor = message.author === currentUser;
                 messageElement.innerHTML = `
                     <div class="message-author">${escapeHtml(message.author)}</div>
                     <div class="message-content">${escapeHtml(message.content)}</div>
-                    <div class="message-time">${formatDateTime(message.createdAt)}</div>
+                    <div class="message-time">${formatDateTime(message.createdAt || message.created_at)}</div>
                     ${isAuthor ? `
                         <div class="message-actions">
                             <button class="edit-btn">Изменить</button>
@@ -316,25 +266,17 @@
                         </div>
                     ` : ''}
                 `;
-                
                 messagesContainer.appendChild(messageElement);
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
-    
-            // Обновление сообщения в DOM
-            function updateMessageInDOM(message) {
+
+            function updateMessageInDOM(message, currentUser) {
                 const messageElement = document.querySelector(`.message[data-message-id="${message.id}"]`);
                 if (messageElement) {
-                    const currentUsername = localStorage.getItem('username');
-                    const isAuthor = message.author === currentUsername;
-                    
-                    // Обновляем контент сообщения
+                    const isAuthor = message.author === currentUser;
                     messageElement.querySelector('.message-content').textContent = message.content;
-                    
-                    // Обновляем кнопки действий
                     let actionsDiv = messageElement.querySelector('.message-actions');
                     if (!actionsDiv && isAuthor) {
-                        // Если кнопок нет, но пользователь автор - создаем их
                         actionsDiv = document.createElement('div');
                         actionsDiv.className = 'message-actions';
                         actionsDiv.innerHTML = `
@@ -342,8 +284,6 @@
                             <button class="delete-btn">Удалить</button>
                         `;
                         messageElement.appendChild(actionsDiv);
-                        
-                        // Создаем форму редактирования
                         const editForm = document.createElement('div');
                         editForm.className = 'edit-form';
                         editForm.style.display = 'none';
@@ -354,129 +294,24 @@
                         `;
                         messageElement.appendChild(editForm);
                     } else if (actionsDiv) {
-                        // Если кнопки есть, показываем/скрываем их в зависимости от авторства
                         actionsDiv.style.display = isAuthor ? 'flex' : 'none';
                     }
-                    
-                    // Скрываем форму редактирования
                     const editForm = messageElement.querySelector('.edit-form');
-                    if (editForm) {
-                        editForm.style.display = 'none';
-                    }
+                    if (editForm) editForm.style.display = 'none';
                 }
             }
-    
-            // Удаление сообщения из DOM
-            function removeMessageFromDOM(messageId) {
-                const messageElement = document.querySelector(`.message[data-message-id="${messageId}"]`);
-                if (messageElement) {
-                    messageElement.remove();
-                }
-            }
-    
-            // Форматирование даты
-            function formatDateTime(isoString) {
-    try {
-        // Проверяем, что isoString существует и не пустой
-        if (!isoString) {
-            console.error('Empty date string');
-            return 'Дата не указана';
-        }
 
-        // Создаем объект Date
-        const date = new Date(isoString);
-        
-        // Проверяем, что дата валидна
-        if (isNaN(date.getTime())) {
-            console.error('Invalid date:', isoString);
-            return 'Неверная дата';
-        }
-        
-        // Форматируем дату
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        const hours = String(date.getHours()).padStart(2, '0');
-        const minutes = String(date.getMinutes()).padStart(2, '0');
-        const seconds = String(date.getSeconds()).padStart(2, '0');
-        
-        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-    } catch (e) {
-        console.error('Date formatting error:', e, 'Input:', isoString);
-        return 'Ошибка даты';
-    }
-}
-    
-            // Отправка сообщения
-            messageForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                
-                const token = localStorage.getItem('jwt');
-                const username = localStorage.getItem('username');
-                
-                if (!token || !username) {
-                    updateStatus('Пожалуйста, войдите в систему', 'error');
-                    window.location.href = '/auth/login';
-                    return;
-                }
-                
-                const content = document.getElementById('content').value.trim();
-                
-                if (!content) {
-                    updateStatus('Пожалуйста, введите сообщение', 'error');
-                    return;
-                }
-    
-                try {
-                    const response = await fetch(`/api/forums/${forumId}/messages`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json',
-                            'Authorization': `Bearer ${token}`
-                        },
-                        body: JSON.stringify({ 
-                            author: username,
-                            content: content 
-                        })
-                    });
-    
-                    const data = await response.json();
-                    
-                    if (!response.ok) {
-                        throw new Error(data.error || 'Server error');
-                    }
-    
-                    document.getElementById('content').value = '';
-                    updateStatus('Message sent', 'success');
-                } catch (error) {
-                    console.error('Error:', error);
-                    updateStatus(error.message, 'error');
-                }
-            });
-    
-            // Обработчики для кнопок удаления и редактирования
             messagesContainer.addEventListener('click', function(e) {
                 const messageElement = e.target.closest('.message');
                 if (!messageElement) return;
-                
                 const messageId = messageElement.dataset.messageId;
-                const currentUsername = localStorage.getItem('username');
                 const messageAuthor = messageElement.querySelector('.message-author').textContent;
-                
-                // Проверяем, является ли текущий пользователь автором
-                if (messageAuthor !== currentUsername) {
-                    return; // Если не автор, игнорируем клик
-                }
-                
-                // Удаление сообщения
+                if (messageAuthor !== username) return;
                 if (e.target.classList.contains('delete-btn')) {
                     if (confirm('Вы уверены, что хотите удалить это сообщение?')) {
                         deleteMessage(messageId);
                     }
                 }
-                
-                // Начало редактирования
                 if (e.target.classList.contains('edit-btn')) {
                     const editForm = messageElement.querySelector('.edit-form');
                     const actionsDiv = messageElement.querySelector('.message-actions');
@@ -485,8 +320,6 @@
                         actionsDiv.style.display = 'none';
                     }
                 }
-                
-                // Сохранение изменений
                 if (e.target.classList.contains('save-edit')) {
                     const editForm = messageElement.querySelector('.edit-form');
                     const newContent = editForm.querySelector('.edit-content').value.trim();
@@ -494,8 +327,6 @@
                         updateMessage(messageId, newContent);
                     }
                 }
-                
-                // Отмена редактирования
                 if (e.target.classList.contains('cancel-edit')) {
                     const editForm = messageElement.querySelector('.edit-form');
                     const actionsDiv = messageElement.querySelector('.message-actions');
@@ -505,16 +336,13 @@
                     }
                 }
             });
-    
-            // Обновление сообщения
+
             async function updateMessage(messageId, newContent) {
-                const token = localStorage.getItem('jwt');
                 if (!token) {
                     updateStatus('Пожалуйста, войдите в систему', 'error');
                     window.location.href = '/auth/login';
                     return;
                 }
-
                 try {
                     const response = await fetch(`/api/forums/${forumId}/messages/${messageId}`, {
                         method: 'PUT',
@@ -524,50 +352,54 @@
                         },
                         body: JSON.stringify({ content: newContent })
                     });
-                    
-                    if (!response.ok) {
-                        throw new Error('Failed to update message');
-                    }
-                    
+                    if (!response.ok) throw new Error('Failed to update message');
                     const data = await response.json();
-                    updateMessageInDOM(data);
+                    updateMessageInDOM(data, username);
                     updateStatus('Сообщение обновлено', 'success');
                 } catch (error) {
-                    console.error('Update error:', error);
                     updateStatus('Ошибка при обновлении сообщения', 'error');
                 }
             }
-    
-            // Удаление сообщения
+
             async function deleteMessage(messageId) {
-                const token = localStorage.getItem('jwt');
                 if (!token) {
                     updateStatus('Пожалуйста, войдите в систему', 'error');
                     window.location.href = '/auth/login';
                     return;
                 }
-
                 try {
                     const response = await fetch(`/api/forums/${forumId}/messages/${messageId}`, {
                         method: 'DELETE',
-                        headers: {
-                            'Authorization': `Bearer ${token}`
-                        }
+                        headers: { 'Authorization': `Bearer ${token}` }
                     });
-                    
-                    if (!response.ok) {
-                        throw new Error('Failed to delete message');
-                    }
-                    
+                    if (!response.ok) throw new Error('Failed to delete message');
                     removeMessageFromDOM(messageId);
                     updateStatus('Сообщение удалено', 'success');
                 } catch (error) {
-                    console.error('Delete error:', error);
                     updateStatus('Ошибка при удалении сообщения', 'error');
                 }
             }
-    
-            // Вспомогательные функции
+
+            function removeMessageFromDOM(messageId) {
+                const messageElement = document.querySelector(`.message[data-message-id="${messageId}"]`);
+                if (messageElement) messageElement.remove();
+            }
+
+            function formatDateTime(isoString) {
+                try {
+                    if (!isoString) return 'Дата не указана';
+                    const date = new Date(isoString);
+                    if (isNaN(date.getTime())) return 'Неверная дата';
+                    const year = date.getFullYear();
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const day = String(date.getDate()).padStart(2, '0');
+                    const hours = String(date.getHours()).padStart(2, '0');
+                    const minutes = String(date.getMinutes()).padStart(2, '0');
+                    const seconds = String(date.getSeconds()).padStart(2, '0');
+                    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+                } catch (e) { return 'Ошибка даты'; }
+            }
+
             function updateStatus(message, type) {
                 statusElement.textContent = message;
                 statusElement.className = `status ${type}`;
@@ -576,219 +408,154 @@
                     statusElement.className = 'status';
                 }, 5000);
             }
-    
+
             function escapeHtml(text) {
-                return text
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/'/g, '&#039;');
+                if (!text) return '';
+                return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
             }
-    
-            // Инициализация
+
+            // Отправка сообщения в форум
+            messageForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                if (!token || !username) {
+                    updateStatus('Пожалуйста, войдите в систему', 'error');
+                    window.location.href = '/auth/login';
+                    return;
+                }
+                const content = document.getElementById('content').value.trim();
+                if (!content) {
+                    updateStatus('Пожалуйста, введите сообщение', 'error');
+                    return;
+                }
+                try {
+                    const response = await fetch(`/api/forums/${forumId}/messages`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({ author: username, content: content })
+                    });
+                    const data = await response.json();
+                    if (!response.ok) {
+                        if (response.status === 401) {
+                            window.location.href = '/auth/login';
+                            return;
+                        }
+                        throw new Error(data.error || 'Server error');
+                    }
+                    document.getElementById('content').value = '';
+                    updateStatus('Message sent', 'success');
+                } catch (error) {
+                    updateStatus(error.message, 'error');
+                }
+            });
+
+            // WebSocket для форума
+            function connectWebSocket() {
+                const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+                ws = new WebSocket(`${protocol}${window.location.host}/ws/${forumId}`);
+                ws.onopen = () => updateStatus('Connected to chat', 'success');
+                ws.onclose = () => { updateStatus('Connection lost. Reconnecting...', 'error'); setTimeout(connectWebSocket, 5000); };
+                ws.onerror = (error) => { updateStatus('Connection error', 'error'); };
+                ws.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        switch(data.type) {
+                            case 'message_created':
+                                const message = { ...data.payload, createdAt: data.payload.created_at || formatDateTime(new Date().toISOString()) };
+                                addMessageToDOM(message, username);
+                                break;
+                            case 'message_updated':
+                                updateMessageInDOM(data.payload, username);
+                                break;
+                            case 'message_deleted':
+                                removeMessageFromDOM(data.payload.messageId);
+                                break;
+                        }
+                    } catch (e) {}
+                };
+            }
+            await loadMessages();
             connectWebSocket();
-        });
-        document.addEventListener('DOMContentLoaded', function() {
-    const chatContainer = document.getElementById('mini-chat');
-    const chatMessages = document.getElementById('chat-messages');
-    const chatInput = document.getElementById('chat-message');
-    const sendButton = document.getElementById('send-message');
-    const toggleButton = document.getElementById('toggle-chat');
 
-    // Замените 'YOUR_API_ENDPOINT' на реальный URL вашего API
-    const apiEndpoint = '/api/global-chat';
+            // === МИНИ-ЧАТ ===
+            const chatContainer = document.getElementById('mini-chat');
+            const chatMessages = document.getElementById('chat-messages');
+            const chatInput = document.getElementById('chat-message');
+            const sendButton = document.getElementById('send-message');
+            const toggleButton = document.getElementById('toggle-chat');
+            const apiEndpoint = '/api/global-chat';
+            const chatUsername = localStorage.getItem('username') || 'Guest';
+            const chatProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+            const chatWs = new WebSocket(`${chatProtocol}${window.location.host}/ws/global`);
 
-    // Замените 'username' реальным именем пользователя (полученным, например, из куки или глобальной переменной)
-    const username = localStorage.getItem('username') || 'Guest'; // Или получи его откуда-нибудь: localStorage.getItem('username') || 'Guest';
+            chatWs.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                const messageElement = document.createElement('div');
+                messageElement.className = 'message';
+                messageElement.innerHTML = `
+                    <div class="message-author">${escapeHtml(data.username)}:</div>
+                    <div class="message-content">${escapeHtml(data.text)}</div>
+                    <div class="message-time" style="font-size:12px;color:#666">${escapeHtml(formatMessageTimestamp(data.timestamp))}</div>
+                `;
+                chatMessages.appendChild(messageElement);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            };
 
-    // Подключение WebSocket
-    const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-    const ws = new WebSocket(`${protocol}${window.location.host}/ws/global`);
-
-    ws.onopen = function(event) {
-    console.log('WebSocket connected');
-};
-
-ws.onclose = function(event) {
-    console.log('WebSocket disconnected', event);
-};
-
-    // Обработчик сообщений WebSocket
-    ws.onmessage = function(event) {
-        console.log("qweqweqw")
-        const data = JSON.parse(event.data);
-        console.log(data)
-        const messageElement = document.createElement('div');
-        messageElement.className = 'message';
-        messageElement.innerHTML = `
-            <div class="message-author">${escapeHtml(data.username)}:</div>
-            <div class="message-content">${escapeHtml(data.text)}</div>
-            <div class="message-time" style="font-size:12px;color:#666">
-                    ${escapeHtml(formatMessageTimestamp(data.timestamp))}
-                </div>
-        `;
-        chatMessages.appendChild(messageElement);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-    };
-
-    function formatMessageTimestamp(timestamp) {
-    const date = new Date(timestamp);
-    
-    // Получаем компоненты даты
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    
-    return `${year}-${month}-${day} ${hours}:${minutes}`;
-}
-
-    // Функция отправки сообщения (POST-запрос на сервер)
-    async function sendMessage() {
-        const token = localStorage.getItem('jwt');
-        if (!token) {
-            alert('Пожалуйста, войдите в аккаунт, чтобы отправлять сообщения в мини-чате.');
-            window.location.href = '/auth/login';
-            return;
-        }
-        const username = localStorage.getItem('username') || 'Guest';
-        const message = chatInput.value.trim();
-        if (message) {
-            try {
-                const requestBody = JSON.stringify({
-                    username: username,
-                    text: message
-                });
-
-                // Выводим requestBody в консоль
-                console.log('Sending request:', requestBody);
-
-                const response = await fetch(apiEndpoint, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: requestBody
-                });
-
-                // Выводим ответ в консоль
-                console.log('Response:', response);
-
-                if (!response.ok) {
-                    // Выводим текст ошибки в консоль
-                    const errorText = await response.text();
-                    console.error('Error response:', errorText);
-                    throw new Error(`HTTP error! status: ${response.status}, text: ${errorText}`);
-                }
-
-                const responseData = await response.json();  // Предполагаем, что сервер возвращает JSON
-                console.log('Message sent successfully:', responseData);
-
-                // Очищаем поле ввода только после успешной отправки
-                chatInput.value = '';
-
-                //Отправляем сообщение через вебсокет
-                if (ws.readyState === WebSocket.OPEN) {
-                    //Не нужно отправлять в вебсокет сообщение, сервер это сделает
-                    //ws.send(JSON.stringify({ username: username, text: message }));
-                }
-
-
-            } catch (error) {
-                console.error('Error sending message:', error);
-                // Обработка ошибки отправки (например, показать сообщение пользователю)
-                alert('Failed to send message. Please try again.');
+            function formatMessageTimestamp(timestamp) {
+                const date = new Date(timestamp);
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                return `${year}-${month}-${day} ${hours}:${minutes}`;
             }
-        }
-    }
 
-    // Обработчики событий
-    sendButton.addEventListener('click', sendMessage);
-    chatInput.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-            e.preventDefault(); // Предотвращаем перенос строки в поле ввода
-            sendMessage();
-        }
-    });
-
-    // Сворачивание/разворачивание чата
-    toggleButton.addEventListener('click', function() {
-        chatContainer.classList.toggle('chat-collapsed');
-        toggleButton.textContent = chatContainer.classList.contains('chat-collapsed') ? '+' : '−';
-    });
-
-    // Экранирование HTML
-    function escapeHtml(text) {
-        return text
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
-    }
-});
-
-function checkAuth() {
-    const token = localStorage.getItem('jwt');
-    if (!token) {
-        alert('Please login to send messages');
-        window.location.href = '/auth/login-page';
-        return false;
-    }
-    return true;
-}
-
-document.getElementById('messageForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    if (!checkAuth()) return;
-
-    const message = document.getElementById('message').value;
-    const token = localStorage.getItem('jwt');
-
-    try {
-        const response = await fetch('/api/messages', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({ message })
-        });
-
-        if (response.ok) {
-            document.getElementById('message').value = '';
-            // Refresh messages
-            loadMessages();
-        } else {
-            alert('Failed to send message');
-        }
-    } catch (error) {
-        console.error('Error:', error);
-    }
-});
-
-async function loadMessages() {
-    const token = localStorage.getItem('jwt');
-    try {
-        const response = await fetch('/api/messages', {
-            headers: {
-                'Authorization': `Bearer ${token}`
+            async function sendMessage() {
+                const token = localStorage.getItem('jwt');
+                if (!token) {
+                    alert('Пожалуйста, войдите в аккаунт, чтобы отправлять сообщения в мини-чате.');
+                    window.location.href = '/auth/login';
+                    return;
+                }
+                const username = localStorage.getItem('username') || 'Guest';
+                const message = chatInput.value.trim();
+                if (message) {
+                    try {
+                        const requestBody = JSON.stringify({ username: username, text: message });
+                        const response = await fetch(apiEndpoint, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${token}`
+                            },
+                            body: requestBody
+                        });
+                        if (!response.ok) {
+                            const errorText = await response.text();
+                            throw new Error(`HTTP error! status: ${response.status}, text: ${errorText}`);
+                        }
+                        chatInput.value = '';
+                    } catch (error) {
+                        alert('Failed to send message. Please try again.');
+                    }
+                }
             }
+
+            sendButton.addEventListener('click', sendMessage);
+            chatInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+            toggleButton.addEventListener('click', function() {
+                chatContainer.classList.toggle('chat-collapsed');
+                toggleButton.textContent = chatContainer.classList.contains('chat-collapsed') ? '+' : '−';
+            });
         });
-        
-        if (response.ok) {
-            const messages = await response.json();
-            // Update messages display
-            updateMessagesDisplay(messages);
-        }
-    } catch (error) {
-        console.error('Error:', error);
-    }
-}
     </script>
 </body>
 </html>

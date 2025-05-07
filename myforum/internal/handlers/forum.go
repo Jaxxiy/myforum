@@ -91,6 +91,9 @@ func RegisterForumHandlers(r *mux.Router, repo *repository.ForumsRepo) {
 
 	api.HandleFunc("/global-chat", handleGlobalChatMessage(repo)).Methods("POST")
 
+	// Новый API-эндпоинт для загрузки сообщений с учетом токена
+	api.HandleFunc("/forums/{id:[0-9]+}/messages-list", GetMessagesAPI(repo)).Methods("GET")
+
 }
 
 func LoginPage(w http.ResponseWriter, r *http.Request) {
@@ -654,5 +657,41 @@ func handleGlobalChatMessage(repo *repository.ForumsRepo) http.HandlerFunc {
 			"timestamp": time.Now(),
 		})
 
+	}
+}
+
+// Новый API-эндпоинт для загрузки сообщений с учетом токена
+func GetMessagesAPI(repo *repository.ForumsRepo) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		forumID, err := strconv.Atoi(vars["id"])
+		if err != nil {
+			http.Error(w, "Invalid forum ID", http.StatusBadRequest)
+			return
+		}
+
+		messages, err := repo.GetMessages(forumID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Получаем текущего пользователя из JWT токена
+		authHeader := r.Header.Get("Authorization")
+		var currentUser string
+		if authHeader != "" {
+			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+			if claims, err := jwt.ParseToken(tokenString, "your-secret-key"); err == nil {
+				if user, err := repo.GetUserByID(claims.UserID); err == nil {
+					currentUser = user.Username
+				}
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"messages":    messages,
+			"currentUser": currentUser,
+		})
 	}
 }
