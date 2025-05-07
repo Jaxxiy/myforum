@@ -183,15 +183,17 @@
                 <div class="message-author">{{ .Author }}</div>
                 <div class="message-content">{{ .Content }}</div>
                 <div class="message-time">{{ .CreatedAt.Format "2006-01-02 15:04:05" }}</div>
+                {{ if eq .Author $.CurrentUser }}
                 <div class="message-actions">
                     <button class="edit-btn">Изменить</button>
                     <button class="delete-btn">Удалить</button>
                 </div>
-                <div class="edit-form">
+                <div class="edit-form" style="display:none">
                     <textarea class="edit-content">{{ .Content }}</textarea>
                     <button class="save-edit">Сохранить</button>
                     <button class="cancel-edit">Отмена</button>
                 </div>
+                {{ end }}
             </div>
             {{ end }}
         </div>
@@ -289,53 +291,80 @@
     
             // Добавление сообщения в чат
             function addMessageToDOM(message) {
-    const messagesContainer = document.getElementById('messages');
-    const messageElement = document.createElement('div');
-    messageElement.className = 'message';
-    messageElement.dataset.messageId = message.id;
-    
-    // Проверяем, является ли текущий пользователь автором
-    const isAuthor = message.author === username;
-    
-    messageElement.innerHTML = `
-        <div class="message-author">${escapeHtml(message.author)}</div>
-        <div class="message-content">${escapeHtml(message.content)}</div>
-        <div class="message-time">${formatDateTime(message.createdAt)}</div>
-        <div class="message-actions" ${!isAuthor ? 'style="display:flex"' : ''}>
-            <button class="edit-btn">Изменить</button>
-            <button class="delete-btn">Удалить</button>
-        </div>
-        <div class="edit-form" style="display:none">
-            <textarea class="edit-content">${escapeHtml(message.content)}</textarea>
-            <button class="save-edit">Сохранить</button>
-            <button class="cancel-edit">Отмена</button>
-        </div>
-    `;
-    
-    messagesContainer.appendChild(messageElement);
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-}
+                const messagesContainer = document.getElementById('messages');
+                const messageElement = document.createElement('div');
+                messageElement.className = 'message';
+                messageElement.dataset.messageId = message.id;
+                
+                // Проверяем, является ли текущий пользователь автором
+                const currentUsername = localStorage.getItem('username');
+                const isAuthor = message.author === currentUsername;
+                
+                messageElement.innerHTML = `
+                    <div class="message-author">${escapeHtml(message.author)}</div>
+                    <div class="message-content">${escapeHtml(message.content)}</div>
+                    <div class="message-time">${formatDateTime(message.createdAt)}</div>
+                    ${isAuthor ? `
+                        <div class="message-actions">
+                            <button class="edit-btn">Изменить</button>
+                            <button class="delete-btn">Удалить</button>
+                        </div>
+                        <div class="edit-form" style="display:none">
+                            <textarea class="edit-content">${escapeHtml(message.content)}</textarea>
+                            <button class="save-edit">Сохранить</button>
+                            <button class="cancel-edit">Отмена</button>
+                        </div>
+                    ` : ''}
+                `;
+                
+                messagesContainer.appendChild(messageElement);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
     
             // Обновление сообщения в DOM
             function updateMessageInDOM(message) {
-    const messageElement = document.querySelector(`.message[data-message-id="${message.id}"]`);
-    if (messageElement) {
-        // Обновляем только контент сообщения
-        messageElement.querySelector('.message-content').textContent = message.content;
-        
-        // Восстанавливаем кнопки действий
-        const actionsDiv = messageElement.querySelector('.message-actions');
-        if (actionsDiv) {
-            actionsDiv.style.display = 'flex'; // Или 'block' в зависимости от вашего CSS
-        }
-        
-        // Скрываем форму редактирования
-        const editForm = messageElement.querySelector('.edit-form');
-        if (editForm) {
-            editForm.style.display = 'none';
-        }
-    }
-}
+                const messageElement = document.querySelector(`.message[data-message-id="${message.id}"]`);
+                if (messageElement) {
+                    const currentUsername = localStorage.getItem('username');
+                    const isAuthor = message.author === currentUsername;
+                    
+                    // Обновляем контент сообщения
+                    messageElement.querySelector('.message-content').textContent = message.content;
+                    
+                    // Обновляем кнопки действий
+                    let actionsDiv = messageElement.querySelector('.message-actions');
+                    if (!actionsDiv && isAuthor) {
+                        // Если кнопок нет, но пользователь автор - создаем их
+                        actionsDiv = document.createElement('div');
+                        actionsDiv.className = 'message-actions';
+                        actionsDiv.innerHTML = `
+                            <button class="edit-btn">Изменить</button>
+                            <button class="delete-btn">Удалить</button>
+                        `;
+                        messageElement.appendChild(actionsDiv);
+                        
+                        // Создаем форму редактирования
+                        const editForm = document.createElement('div');
+                        editForm.className = 'edit-form';
+                        editForm.style.display = 'none';
+                        editForm.innerHTML = `
+                            <textarea class="edit-content">${escapeHtml(message.content)}</textarea>
+                            <button class="save-edit">Сохранить</button>
+                            <button class="cancel-edit">Отмена</button>
+                        `;
+                        messageElement.appendChild(editForm);
+                    } else if (actionsDiv) {
+                        // Если кнопки есть, показываем/скрываем их в зависимости от авторства
+                        actionsDiv.style.display = isAuthor ? 'flex' : 'none';
+                    }
+                    
+                    // Скрываем форму редактирования
+                    const editForm = messageElement.querySelector('.edit-form');
+                    if (editForm) {
+                        editForm.style.display = 'none';
+                    }
+                }
+            }
     
             // Удаление сообщения из DOM
             function removeMessageFromDOM(messageId) {
@@ -432,6 +461,13 @@
                 if (!messageElement) return;
                 
                 const messageId = messageElement.dataset.messageId;
+                const currentUsername = localStorage.getItem('username');
+                const messageAuthor = messageElement.querySelector('.message-author').textContent;
+                
+                // Проверяем, является ли текущий пользователь автором
+                if (messageAuthor !== currentUsername) {
+                    return; // Если не автор, игнорируем клик
+                }
                 
                 // Удаление сообщения
                 if (e.target.classList.contains('delete-btn')) {
@@ -442,13 +478,18 @@
                 
                 // Начало редактирования
                 if (e.target.classList.contains('edit-btn')) {
-                    messageElement.querySelector('.edit-form').style.display = 'block';
-                    messageElement.querySelector('.message-actions').style.display = 'none';
+                    const editForm = messageElement.querySelector('.edit-form');
+                    const actionsDiv = messageElement.querySelector('.message-actions');
+                    if (editForm && actionsDiv) {
+                        editForm.style.display = 'block';
+                        actionsDiv.style.display = 'none';
+                    }
                 }
                 
                 // Сохранение изменений
                 if (e.target.classList.contains('save-edit')) {
-                    const newContent = messageElement.querySelector('.edit-content').value.trim();
+                    const editForm = messageElement.querySelector('.edit-form');
+                    const newContent = editForm.querySelector('.edit-content').value.trim();
                     if (newContent) {
                         updateMessage(messageId, newContent);
                     }
@@ -456,37 +497,30 @@
                 
                 // Отмена редактирования
                 if (e.target.classList.contains('cancel-edit')) {
-                    messageElement.querySelector('.edit-form').style.display = 'none';
-                    messageElement.querySelector('.message-actions').style.display = 'flex';
+                    const editForm = messageElement.querySelector('.edit-form');
+                    const actionsDiv = messageElement.querySelector('.message-actions');
+                    if (editForm && actionsDiv) {
+                        editForm.style.display = 'none';
+                        actionsDiv.style.display = 'flex';
+                    }
                 }
             });
     
-            // Удаление сообщения
-            async function deleteMessage(messageId) {
-                try {
-                    const response = await fetch(`/api/forums/${forumId}/messages/${messageId}`, {
-                        method: 'DELETE'
-                    });
-                    
-                    if (!response.ok) {
-                        throw new Error('Failed to delete message');
-                    }
-                    
-                    removeMessageFromDOM(messageId);
-                    updateStatus('Message deleted', 'success');
-                } catch (error) {
-                    console.error('Delete error:', error);
-                    updateStatus('Error deleting message', 'error');
-                }
-            }
-    
             // Обновление сообщения
             async function updateMessage(messageId, newContent) {
+                const token = localStorage.getItem('jwt');
+                if (!token) {
+                    updateStatus('Пожалуйста, войдите в систему', 'error');
+                    window.location.href = '/auth/login';
+                    return;
+                }
+
                 try {
                     const response = await fetch(`/api/forums/${forumId}/messages/${messageId}`, {
                         method: 'PUT',
                         headers: {
-                            'Content-Type': 'application/json'
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
                         },
                         body: JSON.stringify({ content: newContent })
                     });
@@ -497,10 +531,39 @@
                     
                     const data = await response.json();
                     updateMessageInDOM(data);
-                    updateStatus('Message updated', 'success');
+                    updateStatus('Сообщение обновлено', 'success');
                 } catch (error) {
                     console.error('Update error:', error);
-                    updateStatus('Error updating message', 'error');
+                    updateStatus('Ошибка при обновлении сообщения', 'error');
+                }
+            }
+    
+            // Удаление сообщения
+            async function deleteMessage(messageId) {
+                const token = localStorage.getItem('jwt');
+                if (!token) {
+                    updateStatus('Пожалуйста, войдите в систему', 'error');
+                    window.location.href = '/auth/login';
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`/api/forums/${forumId}/messages/${messageId}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to delete message');
+                    }
+                    
+                    removeMessageFromDOM(messageId);
+                    updateStatus('Сообщение удалено', 'success');
+                } catch (error) {
+                    console.error('Delete error:', error);
+                    updateStatus('Ошибка при удалении сообщения', 'error');
                 }
             }
     

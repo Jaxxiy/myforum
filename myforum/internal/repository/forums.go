@@ -252,3 +252,28 @@ func (r *ForumsRepo) GetGlobalChatHistory(limit int) ([]business.GlobalMessage, 
 
 	return history, nil
 }
+
+func (r *ForumsRepo) GetUserByID(userID int) (*business.User, error) {
+	query := `
+        SELECT id, username, email, created_at, updated_at
+        FROM users
+        WHERE id = $1`
+
+	user := &business.User{}
+	err := r.DB.QueryRow(query, userID).Scan(
+		&user.ID,
+		&user.Username,
+		&user.Email,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, errors.New("user not found")
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return user, nil
+}

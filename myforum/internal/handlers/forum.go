@@ -15,6 +15,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/jaxxiy/myforum/internal/business"
 	"github.com/jaxxiy/myforum/internal/repository"
+	"github.com/jaxxiy/myforum/pkg/jwt"
 )
 
 var (
@@ -393,7 +394,6 @@ func DeleteForum(repo *repository.ForumsRepo) http.HandlerFunc {
 }
 
 func GetMessages(repo *repository.ForumsRepo) http.HandlerFunc {
-
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		forumID, err := strconv.Atoi(vars["id"])
@@ -416,13 +416,28 @@ func GetMessages(repo *repository.ForumsRepo) http.HandlerFunc {
 			return
 		}
 
+		// Получаем текущего пользователя из JWT токена
+		authHeader := r.Header.Get("Authorization")
+		var currentUser string
+		if authHeader != "" {
+			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+			if claims, err := jwt.ParseToken(tokenString, "your-secret-key"); err == nil {
+				// Получаем пользователя из базы данных по ID
+				if user, err := repo.GetUserByID(claims.UserID); err == nil {
+					currentUser = user.Username
+				}
+			}
+		}
+
 		// Рендерим шаблон
 		data := struct {
-			Forum    *business.Forum
-			Messages []business.Message
+			Forum       *business.Forum
+			Messages    []business.Message
+			CurrentUser string
 		}{
-			Forum:    forum,
-			Messages: messages,
+			Forum:       forum,
+			Messages:    messages,
+			CurrentUser: currentUser,
 		}
 
 		renderTemplate(w, "message_list.html", data)
